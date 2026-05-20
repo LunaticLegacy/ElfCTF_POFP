@@ -1,0 +1,26 @@
+# Core dependencies
+openai>=1.0.0
+openai-agents>=0.17.0
+anthropic>=0.100.0
+litellm==1.82.6
+
+# Development dependencies (optional)
+# pytest>=7.0.0
+
+# Provide API to Frontend
+fastapi
+
+# postgresql support
+asyncpg
+
+# knowledge database
+chromadb
+sentence-transformers
+
+# mcp
+mcp>=1.10.0
+
+# else
+r2pipe==1.9.8
+
+

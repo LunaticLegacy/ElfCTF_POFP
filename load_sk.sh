@@ -1,0 +1,3 @@
+export DEEPSEEK_API_KEY="sk-ff46627865b24178b7f7806f4b97a8a2"
+export MOONSHOT_API_KEY="sk-kimi-oljodejm1ub75jhTDH8jHsHZhVYCIGprYGxtLeXwUL8eomFhA2vFb2evMZX0i0mm"
+

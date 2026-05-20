@@ -1,0 +1,90 @@
+{
+  "catalog": [
+    {
+      "id": "re-shortest-verifiable-path",
+      "title": "RE 最短可证路径策略",
+      "path": "kb/strategy/re-shortest-verifiable-path.md",
+      "domain": "ctf",
+      "category": "re",
+      "subtype": "shortest_verifiable_path",
+      "summary": "先做便宜静态提取，再恢复最短求解链，优先运行验证或写最小 solver，而不是默认完整复盘程序。",
+      "signals": [
+        "not stripped",
+        "main 可快速看清输入-校验-输出链",
+        "strings 或符号名暴露关键函数",
+        "success/fail/check/flag 等提示明显"
+      ],
+      "tags": [
+        "reverse",
+        "heuristic",
+        "shortest-path",
+        "solver"
+      ],
+      "references": [
+        "kb/workflows/windows-pe-triage.md",
+        "kb/reversing/linear-constraint-checkers.md",
+        "kb/reversing/embedded-structure-extraction.md",
+        "kb/reversing/xor-encryption-patterns.md"
+      ],
+      "status": "seeded"
+    },
+    {
+      "id": "re-segmented-decode-short-circuit",
+      "title": "RE 分段解密短路策略",
+      "path": "kb/strategy/re-segmented-decode-short-circuit.md",
+      "domain": "ctf",
+      "category": "re",
+      "subtype": "segmented_decode",
+      "summary": "当程序把答案拆成多个 part 并在最后统一拼接或异或时，应尽快恢复各段常量、key 和组合方式，然后直接写最小 solver。",
+      "signals": [
+        "part1..partN",
+        "key_check",
+        "combine/final/decode",
+        "多个局部 key 或固定字符串",
+        "最后统一 xor/拼接"
+      ],
+      "tags": [
+        "reverse",
+        "segmented-decode",
+        "hardcoded-secret",
+        "solver"
+      ],
+      "references": [
+        "kb/reversing/xor-encryption-patterns.md",
+        "kb/reversing/base64-detection.md",
+        "kb/reversing/string-obfuscation-patterns.md",
+        "kb/reversing/embedded-structure-extraction.md"
+      ],
+      "status": "seeded"
+    },
+    {
+      "id": "re-local-decompile-before-full-flow",
+      "title": "RE 局部反编译优先于全流恢复",
+      "path": "kb/strategy/re-local-decompile-before-full-flow.md",
+      "domain": "ctf",
+      "category": "re",
+      "subtype": "local_decompile_first",
+      "summary": "默认先整理关键函数意义和最短求解链，只有在控制流本身是题目核心时，才升级到恢复整个程序运行流。",
+      "signals": [
+        "入口函数较短",
+        "关键函数数量有限",
+        "校验/解密/组合函数边界清晰",
+        "局部恢复足以形成 solver"
+      ],
+      "tags": [
+        "reverse",
+        "decompile",
+        "workflow",
+        "heuristic"
+      ],
+      "references": [
+        "kb/workflows/windows-pe-triage.md",
+        "kb/reversing/control-flow-flattening.md",
+        "kb/reversing/symbolic-execution.md",
+        "kb/reversing/bytecode-script-runtime.md"
+      ],
+      "status": "seeded"
+    }
+  ],
+  "notes": "Seeded strategy cards live as Markdown under kb/strategy for current retrieval, and are mirrored here as structured catalog entries for future StrategyCard learning flows."
+}

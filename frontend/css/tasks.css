@@ -1,0 +1,264 @@
+.task-create-modal {
+  max-width: 820px;
+}
+
+.task-create-body {
+  padding: 16px 20px;
+}
+
+.task-create-mode {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 3px;
+  width: fit-content;
+}
+
+.task-create-mode-btn {
+  padding: 6px 18px;
+  border: none;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-2);
+  transition: all var(--transition);
+  font-family: 'Noto Sans SC', sans-serif;
+}
+
+.task-create-mode-btn:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.task-create-mode-btn.active {
+  background: var(--primary);
+  color: white;
+  box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
+}
+
+.task-create-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+}
+
+.task-create-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.task-create-section-title {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-create-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.skill-select {
+  min-height: 70px;
+}
+
+.batch-planner-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.batch-planner-subtitle {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.batch-planner-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.batch-mini-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
+.batch-planner-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-bottom: 8px;
+  padding: 6px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.batch-task-planner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.batch-task-planner::-webkit-scrollbar {
+  width: 3px;
+}
+
+.batch-task-planner::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 99px;
+}
+
+.batch-task-planner-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+}
+
+.batch-task-planner-item-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.batch-task-planner-item-files {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.batch-task-planner-file-chip {
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(88, 166, 255, 0.1);
+  color: var(--primary);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+  border: 1px solid rgba(88, 166, 255, 0.2);
+  transition: all var(--transition);
+}
+
+.batch-task-planner-file-chip:hover {
+  background: rgba(88, 166, 255, 0.2);
+}
+
+.batch-task-planner-file-chip.assigned {
+  background: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.task-detail-modal {
+  max-width: 900px;
+}
+
+.task-detail-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-detail-modal-header .modal-title {
+  border-bottom: none;
+  padding: 0;
+}
+
+.task-detail-refresh-btn {
+  border-color: var(--primary) !important;
+  color: var(--primary) !important;
+}
+
+.task-detail-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 70vh;
+}
+
+.log-panel-modal {
+  max-width: 700px;
+}
+
+.log-panel-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 70vh;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-2);
+}
+
+.thinking-graph-modal {
+  max-width: 1100px;
+}
+
+.thinking-graph-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.thinking-graph-modal-header .modal-title {
+  border-bottom: none;
+  padding: 0;
+}
+
+.thinking-graph-modal-content {
+  padding: 20px;
+  overflow-y: auto;
+  flex: 1;
+  max-height: 70vh;
+}
+
+.swarm-run-modal {
+  max-width: 1100px;
+}
+
+@media (max-width: 700px) {
+  .task-create-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-detail-modal,
+  .thinking-graph-modal,
+  .swarm-run-modal {
+    max-width: 100%;
+  }
+}

@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>POFP CTF Agent</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/agent.css">
+  <link rel="stylesheet" href="css/tasks.css">
+  <link rel="stylesheet" href="css/config-modal.css">
+  <link rel="stylesheet" href="css/knowledge.css">
+</head>
+<body>
+
+  <header>
+    <div class="brand">
+      <div class="logo">P</div>
+      <h1>POFP CTF Agent</h1>
+    </div>
+    <nav class="header-nav">
+      <button class="header-nav-btn active" type="button">任务管理</button>
+      <button class="header-nav-btn" type="button" onclick="openCockpitModal()">Cockpit</button>
+      <button class="header-nav-btn" type="button" onclick="openKnowledgeModal()">知识库</button>
+    </nav>
+    <div class="header-right">
+      <div class="auth-shell">
+        <span class="auth-label">账号</span>
+        <span id="currentUserBadge" class="auth-user">未登录</span>
+        <button class="mbtn mbtn-s" type="button" id="authActionBtn" onclick="openAuthModal('login')">登录</button>
+        <button class="mbtn mbtn-s" type="button" id="logoutBtn" onclick="logout()" style="display:none">退出</button>
+      </div>
+      <button class="theme-toggle" onclick="toggleTheme()" aria-label="切换主题">◐</button>
+      <div class="status">
+        <div class="dot"></div>
+        <span>就绪</span>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="page active" id="page-tasks" style="display:flex">
+      <aside class="tasks-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-title">任务概览</div>
+          <div class="stat-cards">
+            <div class="stat-card">
+              <div class="stat-card-icon running">▶</div>
+              <div class="stat-card-info">
+                <div class="stat-card-value" id="statRun">0</div>
+                <div class="stat-card-label">运行中</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon done">✓</div>
+              <div class="stat-card-info">
+                <div class="stat-card-value" id="statDone">0</div>
+                <div class="stat-card-label">已完成</div>
+              </div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-card-icon error">✕</div>
+              <div class="stat-card-info">
+                <div class="stat-card-value" id="statErr">0</div>
+                <div class="stat-card-label">失败</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-title">操作</div>
+          <div class="sidebar-actions">
+            <button class="sidebar-btn primary" onclick="openNewTaskModal()">
+              <span class="btn-icon">＋</span>
+              新建任务
+            </button>
+            <button class="sidebar-btn" onclick="openConfigModal()">
+              <span class="btn-icon">⚙</span>
+              API 设置
+            </button>
+            <button class="sidebar-btn" id="taskListRefreshBtn" type="button" onclick="refreshTasksWithButton('taskListRefreshBtn')">
+              <span class="btn-icon">↻</span>
+              刷新列表
+            </button>
+          </div>
+        </div>
+      </aside>
+      <div class="tasks-main">
+        <div class="tasks-toolbar">
+          <div class="tasks-toolbar-left">
+            <div class="tasks-title">任务列表</div>
+            <span class="task-count-badge" id="taskCountBadge">0</span>
+          </div>
+          <div class="tasks-toolbar-right">
+            <div class="task-sort-controls">
+              <select class="task-sort-select" id="taskSortBy" onchange="onTaskSortChange()">
+                <option value="updated_at">更新时间</option>
+                <option value="created_at">创建时间</option>
+                <option value="name">名称</option>
+              </select>
+              <button class="task-sort-direction" id="taskSortDir" onclick="toggleTaskSortDirection()" title="切换排序方向">↓</button>
+            </div>
+          </div>
+        </div>
+        <div class="tasks-container">
+          <div class="task-grid" id="taskGrid"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Config Modal -->
+  <div class="modal-bg config-modal-bg" id="configModal" onclick="closeConfigModal(event)">
+    <div class="modal config-modal" onclick="event.stopPropagation()">
+      <div class="config-modal-header">
+        <div class="config-title">API 配置</div>
+        <div class="config-subtitle">配置 LLM 连接参数和模型设置</div>
+      </div>
+      <div class="config-modal-body">
+        <div class="config-form-grid">
+          <div class="config-form-column">
+            <div class="config-section">
+              <div class="config-section-title">连接设置</div>
+              <div class="form-group">
+                <label>连接器类型</label>
+                <select class="form-input" id="connectorType" onchange="onConnectorTypeChange()">
+                  <option value="litellm">LiteLLM</option>
+                  <option value="openai">OpenAI</option>
+                  <option value="anthropic">Anthropic</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>API 密钥</label>
+                <div style="position:relative">
+                  <input class="form-input" type="password" id="apiKey" placeholder="sk-..." style="padding-right:36px">
+                  <button type="button" class="eye-btn" onclick="toggleApiKeyVisibility()">👁</button>
+                </div>
+              </div>
+              <div class="form-group">
+                <label>API 基础地址 <span class="label-optional">可选</span></label>
+                <div style="position:relative">
+                  <input class="form-input" type="text" id="apiBase" placeholder="留空使用默认地址" style="padding-right:36px">
+                  <button type="button" class="eye-btn" onclick="toggleApiBaseVisibility()">👁</button>
+                </div>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">
+                <span>LLM 模型</span>
+                <button class="btn btn-sec btn-inline" id="fetchModelsBtn" onclick="fetchModels()">获取模型</button>
+              </div>
+              <div class="model-select-shell">
+                <label class="model-manual-toggle">
+                  <input type="checkbox" id="manualModelToggle" onchange="toggleManualModelInput(this.checked)">
+                  <span>手动输入模型</span>
+                </label>
+                <select class="form-input model-select" id="modelSelect">
+                  <option value="">请先输入API密钥并获取模型</option>
+                </select>
+                <input class="form-input hidden" type="text" id="manualModelInput" placeholder="模型名称">
+                <div class="model-config-meta" id="modelMeta">尚未读取模型列表</div>
+              </div>
+            </div>
+          </div>
+          <div class="config-form-column">
+            <div class="config-section">
+              <div class="config-section-title">LLM 参数</div>
+              <div class="param-grid">
+                <div class="form-group">
+                  <label for="temperatureInput">Temperature</label>
+                  <input class="form-input" type="number" id="temperatureInput" min="0" max="2" step="0.1" value="0.7">
+                </div>
+                <div class="form-group">
+                  <label for="maxTokensInput">Max Tokens</label>
+                  <input class="form-input" type="number" id="maxTokensInput" min="1" step="1" value="4000">
+                </div>
+                <div class="form-group">
+                  <label for="timeoutInput">Timeout(秒)</label>
+                  <input class="form-input" type="number" id="timeoutInput" min="1" step="1" value="60">
+                </div>
+              </div>
+            </div>
+            <div class="config-section">
+              <div class="config-section-title">Agent 运行参数</div>
+              <div class="param-grid">
+                <div class="form-group">
+                  <label for="maxRoundsInput">最大轮次</label>
+                  <input class="form-input" type="number" id="maxRoundsInput" min="1" step="1" value="50">
+                </div>
+                <div class="form-group">
+                  <label for="maxContextCharsInput">最大上下文字符数</label>
+                  <input class="form-input" type="number" id="maxContextCharsInput" min="1" step="100" value="14000">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="config-modal-footer">
+        <button class="mbtn mbtn-s" type="button" onclick="closeConfigModal()">关闭</button>
+        <button class="mbtn mbtn-p config-save-btn" type="button" onclick="onSaveConfigClick(this)">保存配置</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Auth Modal -->
+  <div class="modal-bg auth-modal-bg" id="authModal" onclick="closeAuthModal(event)">
+    <div class="modal auth-modal" onclick="event.stopPropagation()">
+      <div class="auth-header">
+        <div class="auth-logo">P</div>
+        <h1 class="auth-title">POFP CTF Agent</h1>
+        <p class="auth-subtitle" id="authSubtitle">连接到服务器</p>
+      </div>
+      <div class="auth-body">
+        <div class="form-group">
+          <label class="auth-label">用户名</label>
+          <input class="form-input auth-input" type="text" id="authUsername" placeholder="输入用户名">
+        </div>
+        <div class="form-group">
+          <label class="auth-label">密码</label>
+          <input class="form-input auth-input" type="password" id="authPassword" placeholder="输入密码">
+        </div>
+        <div class="auth-error" id="authError" style="display:none">
+          <span class="auth-error-icon">⚠</span>
+          <span class="auth-error-text" id="authErrorText"></span>
+        </div>
+        <button class="auth-submit-btn" type="button" id="authSubmitBtn" onclick="submitAuth()">
+          <span id="authSubmitText">登录</span>
+        </button>
+        <div class="auth-toggle">
+          <span id="authToggleHint">还没有账号？</span>
+          <button class="auth-toggle-btn" type="button" id="authToggleBtn" onclick="toggleAuthMode()">去注册</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- New Task Modal -->
+  <div class="modal-bg" id="modalBg">
+    <div class="modal task-create-modal" id="taskCreateModal">
+      <div class="modal-title">新建任务</div>
+      <div class="modal-body task-create-body">
+        <div class="task-create-mode" role="tablist">
+          <button class="task-create-mode-btn active" type="button" id="singleTaskModeBtn" onclick="setTaskCreateMode('single', this)">单个</button>
+          <button class="task-create-mode-btn" type="button" id="batchTaskModeBtn" onclick="setTaskCreateMode('batch', this)">批量</button>
+        </div>
+        <div class="task-create-grid">
+          <section class="task-create-section">
+            <div class="task-create-section-title">基础信息</div>
+            <div class="form-group">
+              <label id="taskNameLabel">任务名称</label>
+              <input class="form-input" type="text" id="taskName" placeholder="输入任务名称" oninput="refreshBatchTaskPlanner()">
+            </div>
+            <div class="form-group hidden" id="batchTaskGroup">
+              <label>批量任务</label>
+              <textarea class="form-input" id="batchTaskInput" rows="7" placeholder="每行一个任务。格式：任务名称 | 目标地址" oninput="refreshBatchTaskPlanner()"></textarea>
+            </div>
+            <div class="form-group">
+              <label>任务类型</label>
+              <select class="form-input" id="taskType" onchange="onTaskTypeChange()">
+                <option value="RE">RE</option>
+                <option value="PWN">Pwn</option>
+                <option value="WEB">Web</option>
+                <option value="CRYPTO">Crypto</option>
+                <option value="MISC">Misc</option>
+                <option value="KNOWLEDGE">Knowledge</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="targetAddrGroup">
+              <label id="taskTargetLabel">目标地址</label>
+              <input class="form-input" type="text" id="taskTarget" placeholder="输入目标地址" oninput="refreshBatchTaskPlanner()">
+            </div>
+            <div class="form-group" id="taskFileUploadGroup">
+              <label>附件上传</label>
+              <div class="upload-zone">
+                <input type="file" multiple id="taskFileInput" onchange="handleTaskFileSelect(this)">
+                <div class="upload-icon">📎</div>
+                <div class="upload-text" id="uploadText">
+                  点击或拖拽上传文件
+                  <br>
+                  <span style="opacity:0.6;font-size:10px">二进制文件、源码等</span>
+                </div>
+                <div class="upload-files" id="uploadedFiles"></div>
+              </div>
+            </div>
+            <div class="form-group hidden" id="batchTaskPlannerGroup">
+              <div class="batch-planner-head">
+                <div>
+                  <label>文件分配</label>
+                  <div class="batch-planner-subtitle">一个任务可关联多个文件</div>
+                </div>
+                <div class="batch-planner-actions">
+                  <button class="mbtn mbtn-s batch-mini-btn" type="button" onclick="applyFilesToAllBatchTasks()">全部分配</button>
+                  <button class="mbtn mbtn-s batch-mini-btn" type="button" onclick="clearAllBatchTaskFiles()">全部清空</button>
+                </div>
+              </div>
+              <div class="batch-planner-summary" id="batchTaskSummary">先填写批量任务并上传文件</div>
+              <div class="batch-task-planner" id="batchTaskPlanner"></div>
+            </div>
+            <div class="form-group">
+              <label>系统提示词</label>
+              <textarea class="form-input" id="taskSystemPrompt" rows="3" placeholder="定义AI的角色和行为..."></textarea>
+            </div>
+          </section>
+          <section class="task-create-section">
+            <div class="task-create-section-title">执行配置</div>
+            <div class="form-group" id="taskModeGroup">
+              <label>任务模式</label>
+              <select class="form-input" id="taskMode" onchange="onTaskModeChange()">
+                <option value="classic">Classic Agent</option>
+                <option value="luna_333">Luna-333</option>
+              </select>
+            </div>
+            <div class="form-group" id="taskExecutionModeGroup">
+              <label>执行模式</label>
+              <select class="form-input" id="taskExecutionMode" onchange="onTaskExecutionModeChange()">
+                <option value="single">单代理</option>
+                <option value="swarm">Swarm 并行</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="taskSwarmSubagentConfigGroup">
+              <label>Swarm 子 Agent 数量</label>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" id="taskSwarmSubagentAutoCount" onchange="onTaskSwarmSubagentAutoCountChange()">
+                  让 LLM 自行决定生成数量
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;">
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">下限</label>
+                  <input class="form-input" type="number" id="taskSwarmSubagentCountMin" min="1" max="8" step="1" value="2" onchange="onTaskSwarmSubagentConfigInputChange()">
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">建议值</label>
+                  <input class="form-input" type="number" id="taskSwarmSubagentCountSuggested" min="1" max="8" step="1" value="4" onchange="onTaskSwarmSubagentConfigInputChange()">
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">上限</label>
+                  <input class="form-input" type="number" id="taskSwarmSubagentCountMax" min="1" max="8" step="1" value="4" onchange="onTaskSwarmSubagentConfigInputChange()">
+                </div>
+              </div>
+            </div>
+            <div class="form-group" id="taskSolverEngineGroup">
+              <label>求解器</label>
+              <select class="form-input" id="taskSolverEngine" onchange="onTaskSolverEngineChange()">
+                <option value="hybrid">Hybrid / 自动选择</option>
+                <option value="thinking_graph_fast">思考图 / 低延迟</option>
+                <option value="thinking_graph">思考图 / 完整版</option>
+                <option value="linear">线性求解器</option>
+              </select>
+            </div>
+            <div class="form-group" id="taskSolverInitialStrategyGroup">
+              <label>求解器初始方案</label>
+              <select class="form-input" id="taskSolverInitialStrategy" onchange="onTaskSolverInitialStrategyChange()">
+                <option value="logic_graph">程序逻辑图 IR</option>
+                <option value="auto">Auto / 由求解器自行决定</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="taskLearningConfigGroup">
+              <label>学习流水线配置</label>
+              <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;">
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">学习策略</label>
+                  <select class="form-input" id="taskLearningMode">
+                    <option value="focused">Focused / 定向学习</option>
+                    <option value="self_search">Self Search / 自搜索学习</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">搜索轮数</label>
+                  <input class="form-input" type="number" id="taskLearningSearchRounds" min="1" max="8" step="1" value="2">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>选择 Skills</label>
+              <select class="form-input skill-select" id="taskSkills" multiple>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">按住 Ctrl/Command 可多选，留空则使用默认配置</small>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="modal-foot task-create-foot">
+        <button class="mbtn mbtn-s" onclick="closeModal()">取消</button>
+        <button class="mbtn mbtn-p" id="createTaskSubmitBtn" onclick="onCreateTaskClick()">创建任务</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Task Detail Modal -->
+  <div class="modal-bg" id="taskDetailModal" onclick="closeTaskDetailModal(event)">
+    <div class="modal task-detail-modal" onclick="event.stopPropagation()">
+      <div class="task-detail-modal-header">
+        <div class="modal-title" id="taskDetailTitle">任务详情</div>
+        <button class="task-btn task-detail-refresh-btn" id="taskDetailRefreshBtn" type="button" onclick="refreshActiveTaskDetailModal()">刷新</button>
+      </div>
+      <div class="task-detail-content" id="taskDetailContent"></div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeTaskDetailModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Log Panel Modal -->
+  <div class="modal-bg" id="logPanelModal" onclick="closeLogPanelModal(event)">
+    <div class="modal log-panel-modal" onclick="event.stopPropagation()">
+      <div class="modal-title" id="logPanelTitle">日志详情</div>
+      <div class="log-panel-content" id="logPanelContent"></div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeLogPanelModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Thinking Graph Modal -->
+  <div class="modal-bg" id="thinkingGraphModal" onclick="closeThinkingGraphModal(event)">
+    <div class="modal thinking-graph-modal" onclick="event.stopPropagation()">
+      <div class="task-detail-modal-header thinking-graph-modal-header">
+        <div class="modal-title" id="thinkingGraphModalTitle">思考图</div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <button class="task-btn" id="thinkingGraphExportBtn" type="button" onclick="exportActiveThinkingGraphResult()">导出</button>
+          <button class="task-btn task-detail-refresh-btn" id="thinkingGraphRefreshBtn" type="button" onclick="refreshActiveThinkingGraphModal()">刷新</button>
+        </div>
+      </div>
+      <div class="thinking-graph-modal-content" id="thinkingGraphModalContent"></div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeThinkingGraphModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Swarm Run Modal -->
+  <div class="modal-bg" id="swarmRunModal" onclick="closeSwarmRunModal(event)">
+    <div class="modal thinking-graph-modal swarm-run-modal" onclick="event.stopPropagation()">
+      <div class="task-detail-modal-header thinking-graph-modal-header">
+        <div class="modal-title" id="swarmRunModalTitle">Swarm 实例</div>
+        <button class="task-btn task-detail-refresh-btn" id="swarmRunRefreshBtn" type="button" onclick="refreshActiveSwarmRunModal()">刷新</button>
+      </div>
+      <div class="thinking-graph-modal-content" id="swarmRunModalContent"></div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeSwarmRunModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Task Modal -->
+  <div class="modal-bg" id="editTaskModalBg" onclick="closeEditTaskModal(event)">
+    <div class="modal task-create-modal" id="editTaskModal">
+      <div class="modal-title">编辑任务</div>
+      <div class="modal-body task-create-body">
+        <input type="hidden" id="editTaskId">
+        <div class="task-create-grid">
+          <section class="task-create-section">
+            <div class="task-create-section-title">基础信息</div>
+            <div class="form-group">
+              <label>任务名称</label>
+              <input class="form-input" type="text" id="editTaskName" placeholder="任务名称">
+            </div>
+            <div class="form-group">
+              <label>任务类型</label>
+              <select class="form-input" id="editTaskType" disabled>
+                <option value="RE">RE</option>
+                <option value="PWN">Pwn</option>
+                <option value="WEB">Web</option>
+                <option value="CRYPTO">Crypto</option>
+                <option value="MISC">Misc</option>
+                <option value="KNOWLEDGE">Knowledge</option>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">任务类型不可修改</small>
+            </div>
+            <div class="form-group" id="editTargetAddrGroup">
+              <label id="editTaskTargetLabel">目标地址</label>
+              <input class="form-input" type="text" id="editTaskTarget" placeholder="目标地址">
+            </div>
+            <div class="form-group">
+              <label>系统提示词</label>
+              <textarea class="form-input" id="editTaskSystemPrompt" rows="3" placeholder="定义AI的角色和行为..."></textarea>
+            </div>
+          </section>
+          <section class="task-create-section">
+            <div class="task-create-section-title">执行配置</div>
+            <div class="form-group" id="editTaskModeGroup">
+              <label>任务模式</label>
+              <select class="form-input" id="editTaskMode" onchange="onEditTaskModeChange()">
+                <option value="classic">Classic Agent</option>
+                <option value="luna_333">Luna-333</option>
+              </select>
+            </div>
+            <div class="form-group" id="editTaskExecutionModeGroup">
+              <label>执行模式</label>
+              <select class="form-input" id="editTaskExecutionMode" onchange="onEditTaskExecutionModeChange()">
+                <option value="single">单代理</option>
+                <option value="swarm">Swarm 并行</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="editTaskSwarmSubagentConfigGroup">
+              <label>Swarm 子 Agent 数量</label>
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+                <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text-2);cursor:pointer;">
+                  <input type="checkbox" id="editTaskSwarmSubagentAutoCount" onchange="onEditTaskSwarmSubagentAutoCountChange()">
+                  让 LLM 自行决定生成数量
+                </label>
+              </div>
+              <div style="display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:10px;">
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">下限</label>
+                  <input class="form-input" type="number" id="editTaskSwarmSubagentCountMin" min="1" max="8" step="1" value="2" onchange="onEditTaskSwarmSubagentConfigInputChange()">
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">建议值</label>
+                  <input class="form-input" type="number" id="editTaskSwarmSubagentCountSuggested" min="1" max="8" step="1" value="4" onchange="onEditTaskSwarmSubagentConfigInputChange()">
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">上限</label>
+                  <input class="form-input" type="number" id="editTaskSwarmSubagentCountMax" min="1" max="8" step="1" value="4" onchange="onEditTaskSwarmSubagentConfigInputChange()">
+                </div>
+              </div>
+            </div>
+            <div class="form-group" id="editTaskSolverEngineGroup">
+              <label>求解器</label>
+              <select class="form-input" id="editTaskSolverEngine">
+                <option value="hybrid">Hybrid / 自动选择</option>
+                <option value="thinking_graph_fast">思考图 / 低延迟</option>
+                <option value="thinking_graph">思考图 / 完整版</option>
+                <option value="linear">线性求解器</option>
+              </select>
+            </div>
+            <div class="form-group" id="editTaskSolverInitialStrategyGroup">
+              <label>求解器初始方案</label>
+              <select class="form-input" id="editTaskSolverInitialStrategy">
+                <option value="logic_graph">程序逻辑图 IR</option>
+                <option value="auto">Auto / 由求解器自行决定</option>
+              </select>
+            </div>
+            <div class="form-group hidden" id="editTaskLearningConfigGroup">
+              <label>学习流水线配置</label>
+              <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;">
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">学习策略</label>
+                  <select class="form-input" id="editTaskLearningMode">
+                    <option value="focused">Focused / 定向学习</option>
+                    <option value="self_search">Self Search / 自搜索学习</option>
+                  </select>
+                </div>
+                <div>
+                  <label style="display:block;font-size:12px;color:var(--text-3);margin-bottom:4px;">搜索轮数</label>
+                  <input class="form-input" type="number" id="editTaskLearningSearchRounds" min="1" max="8" step="1" value="2">
+                </div>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>选择 Skills</label>
+              <select class="form-input skill-select" id="editTaskSkills" multiple>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">按住 Ctrl/Command 可多选</small>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="modal-foot task-create-foot">
+        <button class="mbtn mbtn-s" onclick="closeEditTaskModal()">取消</button>
+        <button class="mbtn mbtn-p" id="editTaskSubmitBtn" onclick="onEditTaskClick()">保存修改</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cockpit Modal -->
+  <div class="modal-bg" id="cockpitModal" onclick="closeCockpitModal(event)">
+    <div class="modal cockpit-modal" onclick="event.stopPropagation()">
+      <div class="modal-title">Cockpit</div>
+      <div class="modal-body">
+        <div class="cockpit-layout">
+          <div class="cockpit-sidebar">
+            <div class="panel-card">
+              <div>
+                <div class="panel-title">后台任务</div>
+                <div class="panel-subtitle">管理长时间运行的任务</div>
+              </div>
+              <div class="detail-actions">
+                <button class="mbtn mbtn-s" type="button" onclick="refreshCockpitJobs()">刷新</button>
+              </div>
+              <div class="panel-scroll" id="cockpitJobList"></div>
+            </div>
+          </div>
+          <div class="cockpit-detail">
+            <div class="panel-card">
+              <div>
+                <div class="panel-title">启动后台任务</div>
+                <div class="panel-subtitle">推荐把 gdb、长时间 exploit、服务端放到这里</div>
+              </div>
+              <div class="job-start-grid">
+                <input class="form-input" type="text" id="cockpitJobName" placeholder="任务名称">
+                <select class="form-input" id="cockpitTaskSelect"></select>
+              </div>
+              <textarea class="form-input action-input" id="cockpitCommand" placeholder="输入命令"></textarea>
+              <div class="detail-actions">
+                <button class="mbtn mbtn-p" type="button" onclick="startCockpitJob()">启动</button>
+              </div>
+            </div>
+            <div class="panel-card">
+              <div>
+                <div class="panel-title">任务详情</div>
+                <div class="panel-subtitle">查看状态、日志并发送输入</div>
+              </div>
+              <div class="detail-grid" id="cockpitMetrics"></div>
+              <div>
+                <div class="panel-subtitle">Stdout</div>
+                <div class="text-shell" id="cockpitStdout">请选择一个后台任务</div>
+              </div>
+              <div>
+                <div class="panel-subtitle">Stderr</div>
+                <div class="text-shell" id="cockpitStderr">请选择一个后台任务</div>
+              </div>
+              <textarea class="form-input action-input" id="cockpitInput" placeholder="发送输入"></textarea>
+              <div class="detail-actions">
+                <button class="mbtn mbtn-p" type="button" onclick="sendCockpitInput()">发送</button>
+                <button class="mbtn mbtn-s" type="button" onclick="stopCockpitJob(false)">停止</button>
+                <button class="mbtn mbtn-s" type="button" onclick="stopCockpitJob(true)">强制停止</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeCockpitModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Knowledge Modal -->
+  <div class="modal-bg" id="knowledgeModal" onclick="closeKnowledgeModal(event)">
+    <div class="modal knowledge-modal" onclick="event.stopPropagation()">
+      <div class="modal-title">知识库</div>
+      <div class="modal-body">
+        <div class="knowledge-layout">
+          <div class="knowledge-sidebar">
+            <div class="panel-card">
+              <div>
+                <div class="panel-title">知识条目</div>
+                <div class="panel-subtitle">查看已入库和待审核内容</div>
+              </div>
+              <div class="knowledge-tabs">
+                <button class="knowledge-tab active" id="knowledgeTabApproved" type="button" onclick="switchKnowledgeTab('approved')">已入库</button>
+                <button class="knowledge-tab" id="knowledgeTabPending" type="button" onclick="switchKnowledgeTab('pending')">待审核</button>
+                <button class="knowledge-tab" id="knowledgeTabRejected" type="button" onclick="switchKnowledgeTab('rejected')">已拒绝</button>
+              </div>
+              <div class="panel-scroll" id="knowledgeList"></div>
+            </div>
+          </div>
+          <div class="knowledge-detail">
+            <div class="panel-card">
+              <div>
+                <div class="panel-title">详情</div>
+                <div class="panel-subtitle">显示内容和审核单</div>
+              </div>
+              <div class="detail-grid" id="knowledgeMetrics"></div>
+              <textarea class="form-input action-input" id="knowledgeReviewNotes" placeholder="审核意见"></textarea>
+              <div class="detail-actions">
+                <button class="mbtn mbtn-p" type="button" onclick="approveKnowledgeReview()">批准</button>
+                <button class="mbtn mbtn-s" type="button" onclick="rejectKnowledgeReview()">拒绝</button>
+                <button class="mbtn mbtn-s" type="button" onclick="refreshKnowledgeList()">刷新</button>
+              </div>
+              <div class="knowledge-content-grid">
+                <div>
+                  <div class="panel-subtitle">内容</div>
+                  <div class="text-shell knowledge-markdown-shell" id="knowledgeContent">请选择条目</div>
+                </div>
+                <div>
+                  <div class="panel-subtitle">审核单</div>
+                  <div class="text-shell knowledge-markdown-shell" id="knowledgeReviewContent">请选择条目</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" onclick="closeKnowledgeModal()">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/core.js" defer></script>
+  <script src="js/ui.js" defer></script>
+  <script src="js/cockpit.js" defer></script>
+  <script src="js/actions.js" defer></script>
+  <script src="js/tasks.js" defer></script>
+  <script src="js/bootstrap.js" defer></script>
+</body>
+</html>

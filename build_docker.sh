@@ -1,0 +1,1 @@
+docker build -f ./docker_environment/Dockerfile.sandbox -t pofpctf-sandbox ./
