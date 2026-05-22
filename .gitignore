@@ -1,4 +1,6 @@
 .*venv*
 workspace
 
+# workspace
+.elfctf
 __pycache__
