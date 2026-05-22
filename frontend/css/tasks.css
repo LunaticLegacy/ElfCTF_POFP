@@ -206,6 +206,382 @@
   max-height: 70vh;
 }
 
+.task-detail-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.task-detail-tab {
+  flex: 0 0 auto;
+  min-height: 32px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.task-detail-tab:hover {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.task-detail-tab.active {
+  color: white;
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.task-detail-page,
+.task-detail-page-compact {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.task-detail-panel,
+.task-new-input-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.task-detail-panel-full {
+  width: 100%;
+}
+
+.task-detail-panel-header,
+.task-new-input-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-detail-panel-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-detail-panel-body {
+  padding: 12px;
+}
+
+.task-detail-panel-actions {
+  margin-top: 14px;
+}
+
+.task-detail-panel-actions .task-actions {
+  flex-wrap: wrap;
+}
+
+.llm-output-shell,
+.llm-empty-state,
+.task-llm-empty {
+  min-height: 120px;
+}
+
+.llm-output-caption {
+  margin-bottom: 10px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.llm-empty-state,
+.task-llm-empty {
+  display: grid;
+  place-items: center;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.6;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.task-log-entry {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-log-entry:last-child {
+  border-bottom: none;
+}
+
+.task-log-entry-empty {
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.task-new-input-panel {
+  margin-top: 14px;
+}
+
+.task-new-input-head {
+  align-items: flex-start;
+}
+
+.task-new-input-subtitle {
+  margin-top: 3px;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.task-new-input-textarea {
+  width: calc(100% - 24px);
+  min-height: 92px;
+  margin: 12px;
+  resize: vertical;
+}
+
+.task-new-input-history {
+  margin: 0 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.task-new-input-history-item {
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.task-new-input-history-item:last-child {
+  border-bottom: none;
+}
+
+.task-new-input-history-time {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-new-input-history-content {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-new-input-feedback {
+  margin: 12px 12px 0;
+  padding: 8px 10px;
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  border-radius: var(--radius-sm);
+  background: rgba(74, 222, 128, 0.08);
+}
+
+.task-new-input-feedback.is-error {
+  border-color: rgba(248, 113, 113, 0.35);
+  background: rgba(248, 113, 113, 0.08);
+}
+
+.task-new-input-feedback-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.task-new-input-feedback-message,
+.task-new-input-feedback-time {
+  margin-top: 3px;
+  color: var(--text-2);
+  font-size: 11px;
+}
+
+.skill-tag {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 2px 4px 2px 0;
+  padding: 2px 7px;
+  border: 1px solid rgba(88, 166, 255, 0.28);
+  border-radius: 999px;
+  color: var(--primary);
+  background: rgba(88, 166, 255, 0.1);
+  font-size: 11px;
+}
+
+.task-progress-root {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.task-progress-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.task-progress-badge,
+.task-progress-type-badge {
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.task-progress-type-badge {
+  color: var(--text-2);
+  background: var(--surface-3);
+}
+
+.task-progress-bar-wrap {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.task-progress-bar-bg {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-3);
+}
+
+.task-progress-bar-fill {
+  height: 100%;
+  min-width: 0;
+  border-radius: inherit;
+  transition: width 0.2s ease;
+}
+
+.task-progress-percent {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-progress-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.9fr);
+  gap: 14px;
+}
+
+.task-progress-col,
+.task-progress-log-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.task-progress-section,
+.task-progress-log-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.task-progress-section-title,
+.task-progress-log-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.task-progress-log-panel-header {
+  cursor: pointer;
+}
+
+.task-progress-info-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+
+.task-progress-info-item {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+}
+
+.task-progress-info-item.wide {
+  grid-column: span 3;
+}
+
+.task-progress-info-label {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.task-progress-info-value {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.task-progress-info-value.code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+}
+
+.task-progress-log-panel-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-progress-log-panel-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.task-progress-log-panel-body {
+  max-height: 190px;
+  overflow-y: auto;
+  padding: 10px;
+}
+
 .log-panel-modal {
   max-width: 700px;
 }
@@ -254,6 +630,26 @@
 @media (max-width: 700px) {
   .task-create-grid {
     grid-template-columns: 1fr;
+  }
+
+  .task-progress-hero,
+  .task-progress-body,
+  .task-progress-info-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .task-progress-info-item.wide {
+    grid-column: auto;
+  }
+
+  .task-detail-tabs {
+    overflow-x: auto;
+  }
+
+  .task-detail-panel-header,
+  .task-new-input-head {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .task-detail-modal,

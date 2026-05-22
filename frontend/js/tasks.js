@@ -70,9 +70,10 @@ function updateTaskStats(tasks) {
   let run = 0, done = 0, err = 0;
   
   tasks.forEach(task => {
-    if (task.status === 'running') run++;
-    else if (task.status === 'done') done++;
-    else if (task.status === 'error' || task.status === 'canceled') err++;
+    const statusKey = getTaskStatusKey(task);
+    if (statusKey === 'running') run++;
+    else if (statusKey === 'done') done++;
+    else if (statusKey === 'error' || statusKey === 'canceled') err++;
   });
   
   document.getElementById('statRun').textContent = run;
@@ -224,25 +225,13 @@ function renderTasks(tasks) {
 
   grid.innerHTML = sortedTasks.map(task => {
     const actionButtons = renderTaskActionButtons(task, { fromCard: true });
-    const badgeClass = {
-      'idle': 'badge-idle',
-      'running': 'badge-run',
-      'done': 'badge-done',
-      'error': 'badge-err',
-      'canceled': 'badge-err'
-    }[task.status] || 'badge-idle';
+    const statusKey = getTaskStatusKey(task);
+    const badgeClass = getTaskStatusBadgeClass(task);
+    const badgeText = getTaskStatusLabel(task);
     
-    const badgeText = {
-      'idle': '闲置',
-      'running': '运行中',
-      'done': '已完成',
-      'error': '失败',
-      'canceled': '已中止'
-    }[task.status] || '闲置';
-    
-    const progressColor = task.status === 'running' ? '#4ade80' : 
-                         task.status === 'done' ? '#60a5fa' : 
-                         (task.status === 'error' || task.status === 'canceled') ? '#f87171' : '#444';
+    const progressColor = statusKey === 'running' ? '#4ade80' :
+                         statusKey === 'done' ? '#60a5fa' :
+                         (statusKey === 'error' || statusKey === 'canceled') ? '#f87171' : '#444';
     
     const fileInfo = (task.files && task.files.length > 0) 
       ? `📎 ${task.files.length} 个文件` 
@@ -251,18 +240,19 @@ function renderTasks(tasks) {
     const timeStr = formatDateTime(task.created_at);
     
     const detailData = buildTaskDetailData(task);
-    const latestPreview = escapeHtml(detailData.engineeringLogs.at(-1) || '点击查看工程细节和 LLM 输出');
     
     // 安全转义用户输入
     const safeId = escapeHtml(task.id);
     const safeName = escapeHtml(task.name);
     const safeType = escapeHtml(getTaskTypeLabel(task.type));
     const safeTarget = escapeHtml(task.target || '');
+    const progressPercent = detailData.progressPercent;
+    const summaryBlocks = renderTaskCardSummaryBlocks(task, detailData, { fileInfo, safeTarget });
     
     return `
       <div class="task-card">
         <div class="task-bar">
-          <div class="task-bar-fill" style="width:${task.progress}%;background:${progressColor}"></div>
+          <div class="task-bar-fill" style="width:${progressPercent}%;background:${progressColor}"></div>
         </div>
         <div class="task-head" onclick="openTaskDetailModal('${safeId}')" style="cursor:pointer">
           <div class="task-meta">
@@ -277,7 +267,7 @@ function renderTasks(tasks) {
           <div class="badge ${badgeClass}">${badgeText}</div>
         </div>
         <div class="task-log-area" onclick="openTaskDetailModal('${safeId}')" style="cursor:pointer">
-          <div class="task-log-line preview">${latestPreview}</div>
+          ${summaryBlocks}
         </div>
         <div class="task-foot">
           <div class="task-time">创建于 ${timeStr}</div>
@@ -290,6 +280,42 @@ function renderTasks(tasks) {
       </div>
     `;
   }).join('');
+}
+
+/**
+ * Render a compact block summary for one task card.
+ *
+ * @param {Object} task - Backend task snapshot used to derive current task state.
+ * @param {Object} detailData - Derived task detail data produced by `buildTaskDetailData`.
+ * @param {Object} display - Precomputed display values from the card renderer.
+ * @returns {string} HTML string containing small, independently scannable summary blocks.
+ */
+function renderTaskCardSummaryBlocks(task, detailData, display = {}) {
+  const targetLabel = LOCAL_FILE_TASK_TYPES.has(task.type)
+    ? (display.fileInfo || '等待上传文件')
+    : (task.target || (isLearningWorkflowTask(task) ? '填写学习主题或 URL' : '仅文件分析'));
+  const latestProgress = detailData.engineeringLogs.at(-1) || '点击查看工程细节和 LLM 输出';
+  const executionLabel = isLearningWorkflowTask(task)
+    ? (task.executionMode === 'swarm' ? 'Swarm 学习' : '单代理学习')
+    : (task.executionMode === 'swarm' ? 'Swarm 并行' : '单代理');
+
+  // Keep each card preview as three stable blocks so list scanning stays predictable.
+  const blocks = [
+    ['对象', targetLabel],
+    ['最新进展', latestProgress],
+    ['执行', `${executionLabel} · ${detailData.progressPercent}%`],
+  ];
+
+  return `
+    <div class="task-summary-grid">
+      ${blocks.map(([label, value]) => `
+        <div class="task-summary-block">
+          <div class="task-summary-label">${escapeHtml(label)}</div>
+          <div class="task-summary-value">${escapeHtml(value)}</div>
+        </div>
+      `).join('')}
+    </div>
+  `;
 }
 
 /**
@@ -559,7 +585,8 @@ function updateProgressPage(container, task, detailData) {
     'error': { text: '失败', color: '#f87171' },
     'canceled': { text: '已中止', color: '#f87171' }
   };
-  const statusInfo = statusMap[task.status] || statusMap['idle'];
+  const statusInfo = statusMap[getTaskStatusKey(task)] || statusMap['idle'];
+  const progressPercent = detailData.progressPercent;
 
   // 更新 Hero 状态栏
   const badge = container.querySelector('.task-progress-badge');
@@ -571,12 +598,12 @@ function updateProgressPage(container, task, detailData) {
 
   const barFill = container.querySelector('.task-progress-bar-fill');
   if (barFill) {
-    barFill.style.width = `${task.progress}%`;
+    barFill.style.width = `${progressPercent}%`;
     barFill.style.background = statusInfo.color;
   }
 
   const percent = container.querySelector('.task-progress-percent');
-  if (percent) percent.textContent = `${task.progress}% 完成`;
+  if (percent) percent.textContent = `${progressPercent}% 完成`;
 
   const typeBadge = container.querySelector('.task-progress-type-badge');
   if (typeBadge) typeBadge.textContent = escapeHtml(task.type);
@@ -586,7 +613,7 @@ function updateProgressPage(container, task, detailData) {
   if (leftCol) {
     const updates = [
       { label: '状态', text: statusInfo.text, color: statusInfo.color },
-      { label: '进度', text: `${task.progress}%` },
+      { label: '进度', text: `${progressPercent}%` },
       { label: '类型', text: escapeHtml(task.type) },
       { label: '目标', text: escapeHtml(task.target || '无') },
       { label: '模块', text: escapeHtml(detailData.modulesLabel) },
@@ -661,7 +688,7 @@ function renderTaskDetailModalForTask(task, options = {}) {
     const actionsBody = contentEl.querySelector('.task-detail-panel-actions .task-detail-panel-body');
     if (actionsBody) {
       const actionButtons = renderTaskActionButtons(task);
-      const editButton = task.status !== 'running'
+      const editButton = getTaskStatusKey(task) !== 'running'
         ? `<button class="task-btn" onclick="openEditTaskModal('${task.id}')">编辑</button>`
         : '';
       const newActionsHtml = `
@@ -906,6 +933,7 @@ function buildTaskDetailData(task) {
 
   return {
     task,
+    progressPercent: normalizeTaskProgressValue(task.progress),
     llmOutputs,
     activeOutputIndex,
     activeTab,
@@ -921,17 +949,122 @@ function buildTaskDetailData(task) {
     pendingNewInput,
     newInputFeedback,
     newInputHistory,
-    filesLabel: task.files?.length ? task.files.map(file => file.name).join(', ') : '无',
+    filesLabel: formatTaskFilesLabel(task.files),
     modulesLabel: task.modules?.length ? task.modules.join(', ') : '无',
     payloadLabel: task.payload ? task.payload : '默认',
+    skillsLabel: formatTaskSkillsHtml(task.skills),
     workspaceLabel: task.artifacts?.workspace_dir ? task.artifacts.workspace_dir : '未创建',
   };
+}
+
+/**
+ * Normalize a backend progress value into a display-safe percentage.
+ *
+ * @param {*} value - Raw progress value from the task snapshot.
+ * @returns {number} Integer percentage clamped to the inclusive 0-100 range.
+ */
+function normalizeTaskProgressValue(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, Math.round(numeric)));
+}
+
+/**
+ * Build a stable file label for task detail surfaces.
+ *
+ * @param {Array} files - Backend file records attached to the task.
+ * @returns {string} Comma-separated unique file names or an empty-state label.
+ */
+function formatTaskFilesLabel(files) {
+  if (!Array.isArray(files)) {
+    return '无';
+  }
+  const names = [...new Set(files
+    .map(file => String(file?.name || '').trim())
+    .filter(Boolean))];
+  return names.length ? names.join(', ') : '无';
+}
+
+/**
+ * Build sanitized skill chips for task detail surfaces.
+ *
+ * @param {Array} skills - Skill identifiers attached to the task.
+ * @returns {string} HTML for skill chips or a muted default label.
+ */
+function formatTaskSkillsHtml(skills) {
+  if (!Array.isArray(skills)) {
+    return '<span style="color:var(--text-muted)">默认</span>';
+  }
+  const names = [...new Set(skills
+    .map(skill => String(skill || '').trim())
+    .filter(skill => skill && skill !== 'undefined' && skill !== 'null'))];
+  return names.length
+    ? names.map(skill => `<span class="skill-tag">${escapeHtml(skill)}</span>`).join(' ')
+    : '<span style="color:var(--text-muted)">默认</span>';
 }
 
 function getTaskEffectiveSolverEngine(task) {
   const runtimeSolver = String(task?.artifacts?.runtime_solver_engine || '').trim();
   if (runtimeSolver) return runtimeSolver;
   return String(task?.solverEngine || '').trim();
+}
+
+/**
+ * Normalize backend and legacy frontend task statuses into one UI key.
+ *
+ * @param {Object} task - Backend task snapshot with a `status` field.
+ * @returns {string} UI status key used for labels, badges, and action buttons.
+ */
+function getTaskStatusKey(task) {
+  const status = String(task?.status || '').trim().toLowerCase();
+  const aliases = {
+    pending: 'idle',
+    idle: 'idle',
+    running: 'running',
+    completed: 'done',
+    done: 'done',
+    failed: 'error',
+    error: 'error',
+    stopped: 'canceled',
+    canceled: 'canceled',
+  };
+  return aliases[status] || 'idle';
+}
+
+/**
+ * Return the human-readable status label for a task.
+ *
+ * @param {Object} task - Backend task snapshot with a `status` field.
+ * @returns {string} Chinese status label for the UI.
+ */
+function getTaskStatusLabel(task) {
+  const labels = {
+    idle: '闲置',
+    running: '运行中',
+    done: '已完成',
+    error: '失败',
+    canceled: '已中止',
+  };
+  return labels[getTaskStatusKey(task)] || labels.idle;
+}
+
+/**
+ * Return the badge CSS class for a task status.
+ *
+ * @param {Object} task - Backend task snapshot with a `status` field.
+ * @returns {string} Badge class name used by task cards.
+ */
+function getTaskStatusBadgeClass(task) {
+  const classes = {
+    idle: 'badge-idle',
+    running: 'badge-run',
+    done: 'badge-done',
+    error: 'badge-err',
+    canceled: 'badge-err',
+  };
+  return classes[getTaskStatusKey(task)] || classes.idle;
 }
 
 function isLearningWorkflowTask(task) {
@@ -1668,11 +1801,25 @@ function closeSwarmRunModal(event) {
 }
 
 function splitEngineeringLogs(engineeringLogs) {
+  /**
+   * Split task logs into tool-oriented and verbose-oriented buckets.
+   *
+   * Args:
+   *   engineeringLogs: Raw engineering log lines stored on the task.
+   *
+   * Returns:
+   *   An object with `toolLogs` and `verboseLogs` arrays.
+   */
   const toolLogs = [];
   const verboseLogs = [];
 
   engineeringLogs.forEach(log => {
-    if (String(log).includes('[Tool:')) {
+    const text = String(log);
+    if (
+      text.includes('[Tool:')
+      || text.includes('[Agent] Calling tool')
+      || text.includes('[Agent] Result of tool')
+    ) {
       toolLogs.push(log);
       return;
     }
@@ -4036,10 +4183,10 @@ function renderThinkingGraphVisual(thinkingGraph, options = {}) {
  * 渲染任务展开后的详情区域。
  */
 function renderTaskDetails(detailData) {
-  const { task, llmOutputs, activeOutputIndex, engineeringLogs, filesLabel, modulesLabel, payloadLabel, workspaceLabel } = detailData;
+  const { task, progressPercent, llmOutputs, activeOutputIndex, engineeringLogs, filesLabel, modulesLabel, payloadLabel, workspaceLabel } = detailData;
   const metaHtml = [
     ['状态', task.status],
-    ['进度', `${task.progress}%`],
+    ['进度', `${progressPercent}%`],
     ['目标', task.target || '无'],
     ['模块', modulesLabel],
     ['文件', filesLabel],
@@ -4104,10 +4251,12 @@ function renderTaskDetailModal(detailData) {
     pendingNewInput,
     newInputFeedback,
     newInputHistory,
+    progressPercent,
     filesLabel,
     modulesLabel,
     payloadLabel,
-    workspaceLabel
+    workspaceLabel,
+    skillsLabel
   } = detailData;
   const effectiveActiveTab = activeTab === 'graph' && !isTaskThinkingGraphModeEnabled(task)
     ? 'progress'
@@ -4117,7 +4266,7 @@ function renderTaskDetailModal(detailData) {
   const actionButtons = renderTaskActionButtons(task);
   
   // 编辑按钮（只在非运行状态显示）
-  const editButton = task.status !== 'running' 
+  const editButton = getTaskStatusKey(task) !== 'running'
     ? `<button class="task-btn" onclick="openEditTaskModal('${task.id}')">编辑</button>`
     : '';
   
@@ -4129,12 +4278,8 @@ function renderTaskDetailModal(detailData) {
     'error': { text: '失败', color: '#f87171' },
     'canceled': { text: '已中止', color: '#f87171' }
   };
-  const statusInfo = statusMap[task.status] || statusMap['idle'];
+  const statusInfo = statusMap[getTaskStatusKey(task)] || statusMap['idle'];
   
-  // Skills 标签
-  const skillsLabel = task.skills?.length 
-    ? task.skills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join(' ')
-    : '<span style="color:var(--text-muted)">默认</span>';
   const swarmSubagentAutoEnabled = Boolean(task.swarmSubagentAutoCount);
   const swarmSubagentConfigLabel = task.executionMode === 'swarm'
     ? `${swarmSubagentAutoEnabled ? 'LLM 自动决定' : '固定建议值'} · ${task.swarmSubagentCountMin ?? '-'} / ${task.swarmSubagentCountSuggested ?? '-'} / ${task.swarmSubagentCountMax ?? '-'}`
@@ -4143,7 +4288,7 @@ function renderTaskDetailModal(detailData) {
   // 工程块元数据
   const metaItems = [
     ['状态', `<span style="color:${statusInfo.color}">${statusInfo.text}</span>`],
-    ['进度', `${task.progress}%`],
+    ['进度', `${progressPercent}%`],
     ['类型', getTaskTypeLabel(task.type)],
     ['任务模式', isLearningWorkflowTask(task) ? 'Luna-333 / 月天使（学习专用）' : task.taskMode === 'luna_333' ? 'Luna-333 / 月天使' : 'Classic Agent'],
     ['执行模式', isLearningWorkflowTask(task) ? (task.executionMode === 'swarm' ? 'Swarm 学习' : '单代理学习') : task.executionMode === 'swarm' ? 'Swarm 并行测试' : '单代理'],
@@ -4246,9 +4391,9 @@ function renderTaskDetailModal(detailData) {
         </div>
         <div class="task-progress-bar-wrap">
           <div class="task-progress-bar-bg">
-            <div class="task-progress-bar-fill" style="width:${task.progress}%;background:${statusInfo.color}"></div>
-          </div>
-          <div class="task-progress-percent">${task.progress}% 完成</div>
+              <div class="task-progress-bar-fill" style="width:${progressPercent}%;background:${statusInfo.color}"></div>
+            </div>
+          <div class="task-progress-percent">${progressPercent}% 完成</div>
         </div>
         <div class="task-progress-type-badge">${escapeHtml(getTaskTypeLabel(task.type))}</div>
       </div>
@@ -4263,7 +4408,7 @@ function renderTaskDetailModal(detailData) {
               </div>
               <div class="task-progress-info-item">
                 <div class="task-progress-info-label">进度</div>
-                <div class="task-progress-info-value">${task.progress}%</div>
+                <div class="task-progress-info-value">${progressPercent}%</div>
               </div>
               <div class="task-progress-info-item">
                 <div class="task-progress-info-label">类型</div>
@@ -4841,20 +4986,21 @@ function renderTaskActionButtons(task, options = {}) {
   const { fromCard = false } = options;
   const stopPropagationPrefix = fromCard ? 'event.stopPropagation();' : '';
   const isAgentTask = task.type !== 'Scan';
+  const statusKey = getTaskStatusKey(task);
 
-  if (task.status === 'running') {
+  if (statusKey === 'running') {
     return `<button class="task-btn danger" onclick="${stopPropagationPrefix}onTaskStopById('${task.id}')">中止</button>`;
   }
 
-  if (task.status === 'idle') {
-    return `<button class="task-btn" onclick="${stopPropagationPrefix}onTaskStartById('${task.id}')">启动</button>`;
+  if (statusKey === 'idle') {
+    return `<button class="task-btn primary" onclick="${stopPropagationPrefix}onTaskStartById('${task.id}')">开始</button>`;
   }
 
   if (!isAgentTask) {
     return '';
   }
 
-  if (task.status === 'done' || task.status === 'error' || task.status === 'canceled') {
+  if (statusKey === 'done' || statusKey === 'error' || statusKey === 'canceled') {
     return `
       <button class="task-btn" onclick="${stopPropagationPrefix}onTaskContinueById('${task.id}')">继续</button>
       <button class="task-btn" onclick="${stopPropagationPrefix}onTaskRetryById('${task.id}')">重试</button>

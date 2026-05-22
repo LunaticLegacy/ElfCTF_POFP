@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.json_types import JsonObject
+
 from .config import KnowledgeConfig
 from .markdown_loader import MarkdownKnowledgeLoader
 from .manifest_store import KnowledgeManifestStore
@@ -143,7 +145,7 @@ class VectorIndexManager:
         self.manifest.save(entries, backend_ready=backend_ready, last_error=last_error)
         return entries
 
-    def vector_status(self) -> dict[str, object]:
+    def vector_status(self) -> JsonObject:
         """Return the current vector-index status payload.
 
         Returns:

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from core.json_types import JsonObject
+
 from .config import KnowledgeConfig
 from .context_builder import TaskContextBuilder
 from .embedding_model import EmbeddingModelProvider
@@ -230,7 +232,7 @@ class KnowledgeBase:
         # indexing out of request paths later without changing lower components.
         return self.index_manager.rebuild_vector_index()
 
-    def vector_status(self) -> dict[str, object]:
+    def vector_status(self) -> JsonObject:
         """Return semantic index and dependency status.
 
         Returns:

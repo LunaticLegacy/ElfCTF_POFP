@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y \
     # Binary analysis
     binutils file xxd bsdmainutils binwalk \
     gdb ltrace strace \
+    upx objdump \
     # Forensics / steg / image analysis
     exiftool steghide \
     pngcheck imagemagick \

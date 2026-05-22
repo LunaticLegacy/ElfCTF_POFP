@@ -1,0 +1,24 @@
+{
+  "users": {
+    "luna": {
+      "api_key": "sk-QGnxmhGzyNskaKqLonbpMgzjcmNhKAHIQINyJybricP2DsEA",
+      "api_base": "https://newapi.20200626.xyz/v1",
+      "model": "gpt-5.3-codex",
+      "temperature": 1.0,
+      "max_tokens": 1048576,
+      "timeout": 120.0,
+      "max_rounds": 200,
+      "max_context_chars": 1048576,
+      "max_context_nodes": 6,
+      "pack_keep_recent": 2,
+      "context_dir": ".pofpctf/context",
+      "max_context_tokens": 3500,
+      "mild_offload_ratio": 0.5,
+      "aggressive_compress_ratio": 0.85,
+      "emergency_compress_ratio": 0.95,
+      "long_term_memory_enabled": true,
+      "connector_type": "litellm"
+    }
+  },
+  "server": {}
+}

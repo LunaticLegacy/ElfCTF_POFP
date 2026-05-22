@@ -4,11 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>POFP CTF Agent</title>
-  <link rel="stylesheet" href="css/style.css">
-  <link rel="stylesheet" href="css/agent.css">
-  <link rel="stylesheet" href="css/tasks.css">
-  <link rel="stylesheet" href="css/config-modal.css">
-  <link rel="stylesheet" href="css/knowledge.css">
+  <link rel="stylesheet" href="css/style.css?v=20260521-verbose-model-fix">
+  <link rel="stylesheet" href="css/agent.css?v=20260521-verbose-model-fix">
+  <link rel="stylesheet" href="css/tasks.css?v=20260521-verbose-model-fix">
+  <link rel="stylesheet" href="css/config-modal.css?v=20260521-verbose-model-fix">
+  <link rel="stylesheet" href="css/knowledge.css?v=20260521-verbose-model-fix">
 </head>
 <body>
 
@@ -340,22 +340,6 @@
                 </div>
               </div>
             </div>
-            <div class="form-group" id="taskSolverEngineGroup">
-              <label>求解器</label>
-              <select class="form-input" id="taskSolverEngine" onchange="onTaskSolverEngineChange()">
-                <option value="hybrid">Hybrid / 自动选择</option>
-                <option value="thinking_graph_fast">思考图 / 低延迟</option>
-                <option value="thinking_graph">思考图 / 完整版</option>
-                <option value="linear">线性求解器</option>
-              </select>
-            </div>
-            <div class="form-group" id="taskSolverInitialStrategyGroup">
-              <label>求解器初始方案</label>
-              <select class="form-input" id="taskSolverInitialStrategy" onchange="onTaskSolverInitialStrategyChange()">
-                <option value="logic_graph">程序逻辑图 IR</option>
-                <option value="auto">Auto / 由求解器自行决定</option>
-              </select>
-            </div>
             <div class="form-group hidden" id="taskLearningConfigGroup">
               <label>学习流水线配置</label>
               <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;">
@@ -517,22 +501,6 @@
                 </div>
               </div>
             </div>
-            <div class="form-group" id="editTaskSolverEngineGroup">
-              <label>求解器</label>
-              <select class="form-input" id="editTaskSolverEngine">
-                <option value="hybrid">Hybrid / 自动选择</option>
-                <option value="thinking_graph_fast">思考图 / 低延迟</option>
-                <option value="thinking_graph">思考图 / 完整版</option>
-                <option value="linear">线性求解器</option>
-              </select>
-            </div>
-            <div class="form-group" id="editTaskSolverInitialStrategyGroup">
-              <label>求解器初始方案</label>
-              <select class="form-input" id="editTaskSolverInitialStrategy">
-                <option value="logic_graph">程序逻辑图 IR</option>
-                <option value="auto">Auto / 由求解器自行决定</option>
-              </select>
-            </div>
             <div class="form-group hidden" id="editTaskLearningConfigGroup">
               <label>学习流水线配置</label>
               <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;">
@@ -681,11 +649,11 @@
     </div>
   </div>
 
-  <script src="js/core.js" defer></script>
-  <script src="js/ui.js" defer></script>
-  <script src="js/cockpit.js" defer></script>
-  <script src="js/actions.js" defer></script>
-  <script src="js/tasks.js" defer></script>
-  <script src="js/bootstrap.js" defer></script>
+  <script src="js/core.js?v=20260521-verbose-model-fix" defer></script>
+  <script src="js/ui.js?v=20260521-verbose-model-fix" defer></script>
+  <script src="js/cockpit.js?v=20260521-verbose-model-fix" defer></script>
+  <script src="js/actions.js?v=20260521-verbose-model-fix" defer></script>
+  <script src="js/tasks.js?v=20260521-verbose-model-fix" defer></script>
+  <script src="js/bootstrap.js?v=20260521-verbose-model-fix" defer></script>
 </body>
 </html>

@@ -776,11 +776,10 @@ main {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 11px;
-  line-height: 1.7;
-  max-height: 80px;
-  overflow-y: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: none;
+  overflow: visible;
 }
 
 .task-log-area::-webkit-scrollbar {
@@ -803,6 +802,37 @@ main {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.task-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.task-summary-block {
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+
+.task-summary-label {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.2;
+}
+
+.task-summary-value {
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .task-foot {
@@ -1309,6 +1339,10 @@ body.task-refresh-paused .task-card {
   }
 
   .task-details {
+    grid-template-columns: 1fr;
+  }
+
+  .task-summary-grid {
     grid-template-columns: 1fr;
   }
 

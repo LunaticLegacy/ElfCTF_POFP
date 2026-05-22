@@ -27,8 +27,8 @@ function onExportLogClick() {
 
 async function fetchModels() {
   if (!ensureAuthenticated()) return;
-  const apiKey = document.getElementById('apiKey').value.trim();
-  const apiBase = document.getElementById('apiBase').value.trim();
+  const apiKey = getInputValue('apiKey').trim();
+  const apiBase = getInputValue('apiBase').trim();
   const connectorType = document.getElementById('connectorType')?.value || 'litellm';
   const fetchBtn = document.getElementById('fetchModelsBtn');
   const modelMeta = document.getElementById('modelMeta');
@@ -58,14 +58,18 @@ async function fetchModels() {
     
     result.data.forEach(model => {
       const option = document.createElement('option');
-      option.value = model.id;
-      option.textContent = model.name;
+      const modelId = String(model?.id || model?.name || model?.display_name || '').trim();
+      const modelLabel = String(model?.name || model?.display_name || model?.id || modelId || '').trim();
+      option.value = modelId || modelLabel;
+      option.textContent = modelLabel || modelId || '未命名模型';
       modelSelect.appendChild(option);
     });
 
+    // 获取成功后默认回到下拉选择模式，避免上一次手动输入状态把列表藏住。
+    toggleManualModelInput(false, false);
+
     if (currentModel && Array.from(modelSelect.options).some(option => option.value === currentModel)) {
       modelSelect.value = currentModel;
-      toggleManualModelInput(false, false);
     }
 
     if (modelMeta) modelMeta.textContent = `已载入 ${result.data.length} 个模型`;
@@ -98,15 +102,15 @@ async function onSaveConfigClick(triggerBtn) {
   if (!btn) return;
   const originalText = btn.textContent;
   
-  const apiKey = document.getElementById('apiKey').value;
-  const apiBase = document.getElementById('apiBase').value;
+  const apiKey = getInputValue('apiKey');
+  const apiBase = getInputValue('apiBase');
   const model = getConfiguredModelValue();
   const connectorType = document.getElementById('connectorType')?.value || 'litellm';
-  const temperatureRaw = document.getElementById('temperatureInput').value;
-  const maxTokensRaw = document.getElementById('maxTokensInput').value;
-  const timeout = Number(document.getElementById('timeoutInput').value);
-  const maxRounds = Number(document.getElementById('maxRoundsInput').value);
-  const maxContextChars = Number(document.getElementById('maxContextCharsInput').value);
+  const temperatureRaw = getInputValue('temperatureInput');
+  const maxTokensRaw = getInputValue('maxTokensInput');
+  const timeout = Number(getInputValue('timeoutInput', '60'));
+  const maxRounds = Number(getInputValue('maxRoundsInput', '50'));
+  const maxContextChars = Number(getInputValue('maxContextCharsInput', '14000'));
   const temperature = temperatureRaw.trim() === '' ? null : Number(temperatureRaw);
   const maxTokens = maxTokensRaw.trim() === '' ? null : Number(maxTokensRaw);
 
@@ -181,19 +185,16 @@ async function onSaveConfigClick(triggerBtn) {
  */
 async function onCreateTaskClick() {
   if (!ensureAuthenticated()) return;
-  const name = document.getElementById('taskName').value.trim();
-  const type = document.getElementById('taskType').value;
+  const name = getInputValue('taskName').trim();
+  const type = getInputValue('taskType', 'RE');
   const workflowKind = type === 'KNOWLEDGE' ? 'learn' : 'solve';
-  const target = document.getElementById('taskTarget').value.trim();
-  const systemPrompt = document.getElementById('taskSystemPrompt').value.trim();
-  const taskMode = document.getElementById('taskMode').value;
-  const executionMode = document.getElementById('taskExecutionMode').value;
-  const solverEngine = document.getElementById('taskSolverEngine').value;
-  const solverInitialStrategy = document.getElementById('taskSolverInitialStrategy').value;
+  const target = getInputValue('taskTarget').trim();
+  const systemPrompt = getInputValue('taskSystemPrompt').trim();
+  const taskMode = getInputValue('taskMode', 'classic');
+  const executionMode = getInputValue('taskExecutionMode', 'single');
   const learningConfig = getLearningConfig('task');
   const swarmSubagentConfig = getSwarmSubagentConfig('task');
   const skills = getSelectedSkills('taskSkills');
-  const selectedMcp = document.getElementById('taskMcpServer').value;
   const submitBtn = document.getElementById('createTaskSubmitBtn');
   const originalButtonText = submitBtn?.textContent || '创建任务';
 
@@ -213,13 +214,10 @@ async function onCreateTaskClick() {
         systemPrompt,
         taskMode,
         executionMode,
-        solverEngine,
-        solverInitialStrategy,
         learningConfig,
         swarmSubagentConfig,
         files: uploadedTaskFiles,
         skills,
-        selectedMcp,
       });
 
       if (result.createdCount > 0) {
@@ -243,8 +241,6 @@ async function onCreateTaskClick() {
       systemPrompt,
       taskMode,
       executionMode,
-      solverEngine,
-      solverInitialStrategy,
       learningMode: learningConfig.mode,
       learningSearchRounds: learningConfig.searchRounds,
       learningResultsPerQuery: learningConfig.resultsPerQuery,
@@ -257,7 +253,6 @@ async function onCreateTaskClick() {
       swarmSubagentCountMax: swarmSubagentConfig.max,
       swarmSubagentCountSuggested: swarmSubagentConfig.suggested,
       skills,
-      selectedMcp,
     });
 
     if (result.success) {
@@ -550,8 +545,8 @@ function refreshBatchTaskPlanner() {
   }).join('');
 }
 
-async function createTasksInBatch({ namePrefix, type, workflowKind, target, systemPrompt, taskMode, executionMode, solverEngine, solverInitialStrategy, learningConfig, swarmSubagentConfig, files, skills, selectedMcp }) {
-  const batchText = document.getElementById('batchTaskInput').value;
+async function createTasksInBatch({ namePrefix, type, workflowKind, target, systemPrompt, taskMode, executionMode, learningConfig, swarmSubagentConfig, files, skills, selectedMcp }) {
+  const batchText = getInputValue('batchTaskInput');
   const definitions = parseBatchTaskDefinitions(batchText, namePrefix, target);
 
   if (definitions.length === 0) {
@@ -571,8 +566,6 @@ async function createTasksInBatch({ namePrefix, type, workflowKind, target, syst
       systemPrompt,
       taskMode,
       executionMode,
-      solverEngine,
-      solverInitialStrategy,
       learningMode: learningConfig?.mode,
       learningSearchRounds: learningConfig?.searchRounds,
       learningResultsPerQuery: learningConfig?.resultsPerQuery,
@@ -670,9 +663,7 @@ async function onTaskSaveNewInput(taskId) {
 async function onTaskStartById(taskId) {
   if (!ensureAuthenticated()) return;
   if (!hasUsableApiConfig()) {
-    addLog('err', '❌ 当前用户没有可用的 API 配置，请先保存用户 API，或配置服务器兜底 API');
-    openConfigModal();
-    return;
+    addLog('warn', '⚠️ 当前未检测到可用 API 配置，已直接提交启动请求，由后端决定是否可运行。');
   }
   
   const result = await apiRequest(`${API_BASE}/tasks/${taskId}/start`, {
@@ -686,7 +677,9 @@ async function onTaskStartById(taskId) {
     addLog('ok', `任务 ${taskId} 已启动`);
     refreshTasks();
   } else {
-    addLog('err', `任务启动失败: ${result.message}`);
+    const reason = result.code || result.data?.code || 'workflow_error';
+    const hint = result.data?.hint ? ` ${result.data.hint}` : '';
+    addLog('err', `任务启动失败 [${reason}]: ${result.message}${hint}`);
   }
 }
 
@@ -709,7 +702,9 @@ async function onTaskContinueById(taskId) {
     addLog('ok', `任务 ${taskId} 已从当前进度继续`);
     refreshTasks();
   } else {
-    addLog('err', `任务继续失败: ${result.message}`);
+    const reason = result.code || result.data?.code || 'workflow_error';
+    const hint = result.data?.hint ? ` ${result.data.hint}` : '';
+    addLog('err', `任务继续失败 [${reason}]: ${result.message}${hint}`);
   }
 }
 
@@ -736,7 +731,9 @@ async function onTaskRetryById(taskId) {
     addLog('ok', `任务 ${taskId} 已重置并重新启动`);
     refreshTasks();
   } else {
-    addLog('err', `任务重试失败: ${result.message}`);
+    const reason = result.code || result.data?.code || 'workflow_error';
+    const hint = result.data?.hint ? ` ${result.data.hint}` : '';
+    addLog('err', `任务重试失败 [${reason}]: ${result.message}${hint}`);
   }
 }
 
@@ -754,7 +751,9 @@ async function onTaskStopById(taskId) {
     addLog('warn', `任务 ${taskId} 已发送中止请求`);
     refreshTasks();
   } else {
-    addLog('err', `任务中止失败: ${result.message}`);
+    const reason = result.code || result.data?.code || 'workflow_error';
+    const hint = result.data?.hint ? ` ${result.data.hint}` : '';
+    addLog('err', `任务中止失败 [${reason}]: ${result.message}${hint}`);
   }
 }
 
@@ -764,20 +763,17 @@ async function onTaskStopById(taskId) {
 async function onEditTaskClick() {
   if (!ensureAuthenticated()) return;
   
-  const taskId = document.getElementById('editTaskId').value;
-  const name = document.getElementById('editTaskName').value.trim();
-  const target = document.getElementById('editTaskTarget').value.trim();
-  const taskType = document.getElementById('editTaskType').value;
+  const taskId = getInputValue('editTaskId').trim();
+  const name = getInputValue('editTaskName').trim();
+  const target = getInputValue('editTaskTarget').trim();
+  const taskType = getInputValue('editTaskType', 'RE');
   const workflowKind = taskType === 'KNOWLEDGE' ? 'learn' : 'solve';
-  const systemPrompt = document.getElementById('editTaskSystemPrompt').value.trim();
-  const executionMode = document.getElementById('editTaskExecutionMode').value;
-  const taskMode = document.getElementById('editTaskMode').value;
-  const solverEngine = document.getElementById('editTaskSolverEngine').value;
-  const solverInitialStrategy = document.getElementById('editTaskSolverInitialStrategy').value;
+  const systemPrompt = getInputValue('editTaskSystemPrompt').trim();
+  const executionMode = getInputValue('editTaskExecutionMode', 'single');
+  const taskMode = getInputValue('editTaskMode', 'classic');
   const learningConfig = getLearningConfig('editTask');
   const swarmSubagentConfig = getSwarmSubagentConfig('editTask');
   const skills = getSelectedSkills('editTaskSkills');
-  const selectedMcp = document.getElementById('editTaskMcpServer').value;
   const submitBtn = document.getElementById('editTaskSubmitBtn');
   const originalButtonText = submitBtn?.textContent || '保存修改';
 
@@ -801,8 +797,6 @@ async function onEditTaskClick() {
         workflowKind,
         taskMode,
         executionMode,
-        solverEngine,
-        solverInitialStrategy,
         learningMode: learningConfig.mode,
         learningSearchRounds: learningConfig.searchRounds,
         learningResultsPerQuery: learningConfig.resultsPerQuery,
@@ -815,7 +809,6 @@ async function onEditTaskClick() {
         swarmSubagentCountMax: swarmSubagentConfig.max,
         swarmSubagentCountSuggested: swarmSubagentConfig.suggested,
         skills,
-        selectedMcp,
       })
     });
 
@@ -842,14 +835,21 @@ async function onTaskDeleteClick(btn) {
   if (!confirm('确定删除此任务？')) return;
   
   const card = btn.closest('.task-card');
-  const taskId = card.querySelector('.task-id').textContent;
+  const taskId = card.querySelector('.task-id')?.textContent.trim();
+  if (!taskId) {
+    addLog('err', '任务删除失败: 未找到任务编号');
+    return;
+  }
   
   const result = await apiRequest(`${API_BASE}/tasks/${taskId}/delete`, {
     method: 'POST'
   });
   
   if (result.success) {
-    refreshTasks();
+    if (activeTaskDetailId === taskId) {
+      closeTaskDetailModal();
+    }
+    await refreshTasks();
     addLog('warn', `🗑️ 任务 ${taskId} 已删除`);
   } else {
     addLog('err', `任务删除失败: ${result.message}`);

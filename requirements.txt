@@ -9,13 +9,14 @@ litellm==1.82.6
 
 # Provide API to Frontend
 fastapi
+# uvicorn
 
 # postgresql support
 asyncpg
 
 # knowledge database
 chromadb
-sentence-transformers
+# sentence-transformers     # I dont need this lib for it will call cuda.
 
 # mcp
 mcp>=1.10.0

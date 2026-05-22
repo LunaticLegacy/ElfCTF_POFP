@@ -11,8 +11,8 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       effective_api_base: '',
       effective_connector_type: 'litellm',
     };
-    document.getElementById('apiKey').value = '';
-    document.getElementById('apiBase').value = '';
+    setInputValue('apiKey', '');
+    setInputValue('apiBase', '');
     updateUserContextUi();
     if (forceRefreshTasks) {
       renderTasks([]);
@@ -31,8 +31,8 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
         effective_api_base: result.data.effective_api_base || '',
         effective_connector_type: result.data.connector_type || 'litellm',
       };
-      document.getElementById('apiKey').value = result.data.api_key || '';
-      document.getElementById('apiBase').value = result.data.api_base || '';
+      setInputValue('apiKey', result.data.api_key || '');
+      setInputValue('apiBase', result.data.api_base || '');
       
       // 设置连接器类型
       const connectorType = result.data.connector_type || 'litellm';
@@ -42,11 +42,11 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
         onConnectorTypeChange();  // 更新提示文本
       }
       
-      document.getElementById('temperatureInput').value = result.data.temperature ?? '';
-      document.getElementById('maxTokensInput').value = result.data.max_tokens ?? '';
-      document.getElementById('timeoutInput').value = result.data.timeout ?? 60;
-      document.getElementById('maxRoundsInput').value = result.data.max_rounds ?? 50;
-      document.getElementById('maxContextCharsInput').value = result.data.max_context_chars ?? 14000;
+      setInputValue('temperatureInput', result.data.temperature ?? '');
+      setInputValue('maxTokensInput', result.data.max_tokens ?? '');
+      setInputValue('timeoutInput', result.data.timeout ?? 60);
+      setInputValue('maxRoundsInput', result.data.max_rounds ?? 50);
+      setInputValue('maxContextCharsInput', result.data.max_context_chars ?? 14000);
       updateUserContextUi();
 
       if (hasUsableApiConfig()) {
@@ -77,8 +77,8 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     const savedKey = localStorage.getItem(getUserStorageKey('ctf_api_key'));
     const savedBase = localStorage.getItem(getUserStorageKey('ctf_api_base'));
     const savedConnector = localStorage.getItem(getUserStorageKey('ctf_connector_type'));
-    document.getElementById('apiKey').value = savedKey || '';
-    document.getElementById('apiBase').value = savedBase || '';
+    setInputValue('apiKey', savedKey || '');
+    setInputValue('apiBase', savedBase || '');
     if (savedConnector) {
       const connectorSelect = document.getElementById('connectorType');
       if (connectorSelect) {

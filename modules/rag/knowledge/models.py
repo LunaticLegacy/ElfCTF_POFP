@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
+
+from core.json_types import JsonObject
 
 
 @dataclass(frozen=True)
@@ -52,7 +54,7 @@ class KnowledgeIndexEntry:
     excerpt: str
     document_id: str
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> JsonObject:
         """Convert the index entry to a JSON-serializable dictionary.
 
         This method preserves the original manifest entry layout by returning
@@ -63,7 +65,7 @@ class KnowledgeIndexEntry:
         """
         # Serialize the dataclass with the standard library helper so future
         # field additions remain automatically reflected in the manifest.
-        return asdict(self)
+        return cast(JsonObject, asdict(self))
 
 
 @dataclass(frozen=True)

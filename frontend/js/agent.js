@@ -388,17 +388,25 @@ async function onTaskStartClick(btn) {
  * 任务卡片 - 删除按钮
  */
 async function onTaskDeleteClick(btn) {
+  if (!ensureAuthenticated()) return;
   if (!confirm('确定删除此任务？')) return;
   
   const card = btn.closest('.task-card');
-  const taskId = card.querySelector('.task-id').textContent;
+  const taskId = card.querySelector('.task-id')?.textContent.trim();
+  if (!taskId) {
+    addLog('err', '任务删除失败: 未找到任务编号');
+    return;
+  }
   
   const result = await apiRequest(`${API_BASE}/tasks/${taskId}/delete`, {
     method: 'POST'
   });
   
   if (result.success) {
-    refreshTasks();
+    if (activeTaskDetailId === taskId) {
+      closeTaskDetailModal();
+    }
+    await refreshTasks();
     addLog('warn', `🗑️ 任务 ${taskId} 已删除`);
   } else {
     addLog('err', `任务删除失败: ${result.message}`);

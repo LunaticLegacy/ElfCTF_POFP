@@ -272,8 +272,8 @@ async function logout() {
     effective_model: '',
     effective_api_base: '',
   };
-  document.getElementById('apiKey').value = '';
-  document.getElementById('apiBase').value = '';
+  setInputValue('apiKey', '');
+  setInputValue('apiBase', '');
   updateUserContextUi();
   renderTasks([]);
   updateTaskStats([]);
@@ -343,6 +343,27 @@ function getSelectedSkills(selectId) {
   const select = document.getElementById(selectId);
   if (!select) return [];
   return Array.from(select.selectedOptions).map(opt => opt.value);
+}
+
+function getInputValue(id, fallback = '') {
+  const element = document.getElementById(id);
+  return element ? String(element.value ?? fallback) : String(fallback);
+}
+
+/**
+ * Safely writes a value into an optional form control.
+ *
+ * @param {string} id - DOM id for the target input, textarea, or select.
+ * @param {string} value - Value to assign when the target element exists.
+ * @returns {boolean} Whether a matching element was found and updated.
+ */
+function setInputValue(id, value) {
+  const element = document.getElementById(id);
+  if (!element) {
+    return false;
+  }
+  element.value = value;
+  return true;
 }
 
 function applyUserContextHeaders(headers = {}) {
@@ -572,11 +593,23 @@ function multipartApiRequest(url, { formData, onProgress, skipAuthRedirect = fal
   });
 }
 
+/**
+ * Format backend timestamps for display in the local Chinese locale.
+ *
+ * @param {*} value - Timestamp string, epoch seconds, epoch milliseconds, or date-like value.
+ * @returns {string} Human-readable local timestamp or a fallback text for invalid input.
+ */
 function formatDateTime(value) {
   if (!value) return '未知时间';
-  const normalizedValue = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(String(value))
-    ? String(value).replace(' ', 'T')
-    : value;
+  const rawValue = String(value).trim();
+  const numericValue = Number(rawValue);
+
+  // Backend timestamps may arrive as epoch seconds, so convert small numeric values first.
+  const normalizedValue = Number.isFinite(numericValue) && rawValue !== ''
+    ? (numericValue < 1000000000000 ? numericValue * 1000 : numericValue)
+    : /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(rawValue)
+      ? rawValue.replace(' ', 'T')
+      : value;
   const date = new Date(normalizedValue);
   if (Number.isNaN(date.getTime())) return String(value);
   return date.toLocaleString('zh-CN', {

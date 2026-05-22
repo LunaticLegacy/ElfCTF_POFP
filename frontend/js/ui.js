@@ -82,27 +82,22 @@ function closeConfigModal(event) {
  * 关闭新建任务弹窗并重置表单
  */
 function closeModal() {
-  document.getElementById('modalBg').classList.remove('show');
+  document.getElementById('modalBg')?.classList.remove('show');
   
-  document.getElementById('taskName').value = '';
-  document.getElementById('taskTarget').value = '';
-  document.getElementById('taskSystemPrompt').value = '';
-  document.getElementById('taskMode').value = 'classic';
-  document.getElementById('taskExecutionMode').value = 'single';
-  document.getElementById('taskSolverEngine').value = 'hybrid';
-  document.getElementById('taskSolverInitialStrategy').value = 'logic_graph';
+  setInputValue('taskName', '');
+  setInputValue('taskTarget', '');
+  setInputValue('taskSystemPrompt', '');
+  setInputValue('taskMode', 'classic');
+  setInputValue('taskExecutionMode', 'single');
   applySwarmSubagentConfig('task', DEFAULT_SWARM_SUBAGENT_CONFIG);
   applyLearningConfig('task', DEFAULT_LEARNING_CONFIG);
-  document.getElementById('batchTaskInput').value = '';
-  document.getElementById('taskType').value = 'RE';
-  document.getElementById('taskFileInput').value = '';
+  setInputValue('batchTaskInput', '');
+  setInputValue('taskType', 'RE');
+  setInputValue('taskFileInput', '');
   setTaskCreateMode('single');
   onTaskTypeChange();
   onTaskModeChange();
   onTaskExecutionModeChange();
-  onTaskSolverEngineChange();
-  onTaskSolverInitialStrategyChange();
-  
   uploadedTaskFiles = [];
   batchTaskFileAssignments = {};
   resetTaskCreateProgress();
@@ -128,16 +123,6 @@ const TASK_MODE_DESCRIPTIONS = {
 const TASK_EXECUTION_MODE_DESCRIPTIONS = {
   single: '单代理模式会按单条执行链推进，适合大多数常规任务。',
   swarm: 'Swarm 并行测试适合同时探索多个分支、payload、候选网页或样本时启用。',
-};
-const TASK_SOLVER_ENGINE_DESCRIPTIONS = {
-  hybrid: 'Hybrid 会按任务模式、执行模式、题型和附件自动选择最合适的求解器；一般建议作为默认值。',
-  thinking_graph_fast: '低延迟思考图会保留图状态，但只维护当前主线与小工作集，适合减少单步等待。',
-  thinking_graph: '完整版思考图会保留专家路由、提案与仲裁链路，适合复杂分支、长期任务和知识沉淀。',
-  linear: '线性求解器会把任务压成一条最短验证链，适合快速试探、轻量 RE 和可直接写最小 solver 的题。',
-};
-const TASK_SOLVER_INITIAL_STRATEGY_DESCRIPTIONS = {
-  logic_graph: '程序逻辑图 IR 会优先把任务恢复成输入、校验、分段处理、组合、输出这类节点与边，适合多层逻辑和复杂 RE。',
-  auto: 'Auto 会让求解器自行决定起手方案，适合你暂时不想强制指定初始方法时使用。',
 };
 const DEFAULT_SWARM_SUBAGENT_CONFIG = {
   autoCount: false,
@@ -246,10 +231,6 @@ function syncTaskWorkflowControls(prefix, taskType = '') {
   const taskModeDescription = document.getElementById(`${prefix}ModeDescription`);
   const executionModeGroup = document.getElementById(`${prefix}ExecutionModeGroup`);
   const executionModeSelect = document.getElementById(`${prefix}ExecutionMode`);
-  const solverEngineGroup = document.getElementById(`${prefix}SolverEngineGroup`);
-  const solverEngineSelect = document.getElementById(`${prefix}SolverEngine`);
-  const solverInitialStrategyGroup = document.getElementById(`${prefix}SolverInitialStrategyGroup`);
-  const solverInitialStrategySelect = document.getElementById(`${prefix}SolverInitialStrategy`);
   const swarmConfigGroup = document.getElementById(`${prefix}SwarmSubagentConfigGroup`);
   const learningConfigGroup = document.getElementById(`${prefix}LearningConfigGroup`);
   const learningConfigDescription = document.getElementById(`${prefix}LearningConfigDescription`);
@@ -270,11 +251,7 @@ function syncTaskWorkflowControls(prefix, taskType = '') {
     if (!executionModeSelect?.value) {
       if (executionModeSelect) executionModeSelect.value = 'single';
     }
-    if (solverEngineSelect) solverEngineSelect.value = 'hybrid';
-    if (solverInitialStrategySelect) solverInitialStrategySelect.value = 'logic_graph';
     executionModeGroup?.classList.remove('hidden');
-    solverEngineGroup?.classList.add('hidden');
-    solverInitialStrategyGroup?.classList.add('hidden');
     learningConfigGroup?.classList.remove('hidden');
     syncSwarmSubagentConfigUI(prefix);
     targetGroup?.classList.remove('hidden');
@@ -310,8 +287,6 @@ function syncTaskWorkflowControls(prefix, taskType = '') {
   }
   updateTaskModeDescription(`${prefix}Mode`, `${prefix}ModeDescription`);
   executionModeGroup?.classList.remove('hidden');
-  solverEngineGroup?.classList.remove('hidden');
-  solverInitialStrategyGroup?.classList.remove('hidden');
   learningConfigGroup?.classList.add('hidden');
   swarmConfigGroup?.classList.toggle('hidden', String(document.getElementById(`${prefix}ExecutionMode`)?.value || 'single').trim() !== 'swarm');
   if (targetLabel) {
@@ -448,42 +423,6 @@ function onEditTaskExecutionModeChange() {
   syncTaskWorkflowControls('editTask', document.getElementById('editTaskType')?.value || 'RE');
 }
 
-function updateTaskSolverEngineDescription(selectId, descriptionId) {
-  const select = document.getElementById(selectId);
-  const description = document.getElementById(descriptionId);
-  if (!select || !description) {
-    return;
-  }
-  const solverEngine = String(select.value || 'hybrid').trim() || 'hybrid';
-  description.textContent = TASK_SOLVER_ENGINE_DESCRIPTIONS[solverEngine] || TASK_SOLVER_ENGINE_DESCRIPTIONS.hybrid;
-}
-
-function onTaskSolverEngineChange() {
-  updateTaskSolverEngineDescription('taskSolverEngine', 'taskSolverEngineDescription');
-}
-
-function onEditTaskSolverEngineChange() {
-  updateTaskSolverEngineDescription('editTaskSolverEngine', 'editTaskSolverEngineDescription');
-}
-
-function updateTaskSolverInitialStrategyDescription(selectId, descriptionId) {
-  const select = document.getElementById(selectId);
-  const description = document.getElementById(descriptionId);
-  if (!select || !description) {
-    return;
-  }
-  const strategy = String(select.value || 'logic_graph').trim() || 'logic_graph';
-  description.textContent = TASK_SOLVER_INITIAL_STRATEGY_DESCRIPTIONS[strategy] || TASK_SOLVER_INITIAL_STRATEGY_DESCRIPTIONS.logic_graph;
-}
-
-function onTaskSolverInitialStrategyChange() {
-  updateTaskSolverInitialStrategyDescription('taskSolverInitialStrategy', 'taskSolverInitialStrategyDescription');
-}
-
-function onEditTaskSolverInitialStrategyChange() {
-  updateTaskSolverInitialStrategyDescription('editTaskSolverInitialStrategy', 'editTaskSolverInitialStrategyDescription');
-}
-
 function onTaskSwarmSubagentAutoCountChange() {
   syncSwarmSubagentConfigUI('task');
 }
@@ -504,7 +443,7 @@ function onEditTaskSwarmSubagentConfigInputChange() {
  * 任务类型变更时，动态调整表单字段显示
  */
 function onTaskTypeChange() {
-  const type = document.getElementById('taskType').value;
+  const type = getInputValue('taskType', 'RE');
   const targetGroup = document.getElementById('targetAddrGroup');
   const targetInput = document.getElementById('taskTarget');
   const uploadText = document.getElementById('uploadText');
@@ -686,15 +625,13 @@ async function openEditTaskModal(taskId) {
   currentEditingTaskId = taskId;
 
   // 填充表单
-  document.getElementById('editTaskId').value = taskId;
-  document.getElementById('editTaskName').value = task.name || '';
-  document.getElementById('editTaskType').value = task.type || 'RE';
-  document.getElementById('editTaskTarget').value = task.target || '';
-  document.getElementById('editTaskSystemPrompt').value = task.systemPrompt || '';
-  document.getElementById('editTaskMode').value = task.taskMode || 'classic';
-  document.getElementById('editTaskExecutionMode').value = task.executionMode || 'single';
-  document.getElementById('editTaskSolverEngine').value = task.solverEngine || 'hybrid';
-  document.getElementById('editTaskSolverInitialStrategy').value = task.solverInitialStrategy || 'logic_graph';
+  setInputValue('editTaskId', taskId);
+  setInputValue('editTaskName', task.name || '');
+  setInputValue('editTaskType', task.type || 'RE');
+  setInputValue('editTaskTarget', task.target || '');
+  setInputValue('editTaskSystemPrompt', task.systemPrompt || '');
+  setInputValue('editTaskMode', task.taskMode || 'classic');
+  setInputValue('editTaskExecutionMode', task.executionMode || 'single');
   applyLearningConfig('editTask', {
     mode: task.learningMode,
     searchRounds: task.learningSearchRounds,
@@ -712,8 +649,6 @@ async function openEditTaskModal(taskId) {
   });
   onEditTaskModeChange();
   onEditTaskExecutionModeChange();
-  onEditTaskSolverEngineChange();
-  onEditTaskSolverInitialStrategyChange();
 
   // 根据类型显示/隐藏目标地址
   const targetGroup = document.getElementById('editTargetAddrGroup');
@@ -731,9 +666,6 @@ async function openEditTaskModal(taskId) {
     await loadSkills(task.type || 'RE');
   }
   populateSkillsSelect('editTaskSkills', task.skills || [], task.type || 'RE');
-
-  // 填充 MCP 选择
-  populateMcpSelect('editTaskMcpServer', task.selectedMcp || '');
 
   // 显示文件列表
   const filesContainer = document.getElementById('editTaskFiles');
@@ -820,29 +752,18 @@ async function populateMcpSelect(selectId, selectedMcp = '') {
 }
 
 /**
- * 加载 MCP 列表到新建任务表单
- */
-async function loadMcpServersForNewTask() {
-  await populateMcpSelect('taskMcpServer', '');
-}
-
-/**
  * 打开新建任务模态框
  */
 function openNewTaskModal() {
-  document.getElementById('modalBg').classList.add('show');
+  document.getElementById('modalBg')?.classList.add('show');
   setTaskCreateMode('single');
-  document.getElementById('taskMode').value = 'classic';
-  document.getElementById('taskExecutionMode').value = 'single';
-  document.getElementById('taskSolverEngine').value = 'hybrid';
-  document.getElementById('taskSolverInitialStrategy').value = 'logic_graph';
+  setInputValue('taskMode', 'classic');
+  setInputValue('taskExecutionMode', 'single');
   applySwarmSubagentConfig('task', DEFAULT_SWARM_SUBAGENT_CONFIG);
   applyLearningConfig('task', DEFAULT_LEARNING_CONFIG);
   onTaskTypeChange();
   onTaskModeChange();
   onTaskExecutionModeChange();
-  onTaskSolverEngineChange();
-  onTaskSolverInitialStrategyChange();
   uploadedTaskFiles = [];
   batchTaskFileAssignments = {};
   resetTaskCreateProgress();
@@ -855,5 +776,4 @@ function openNewTaskModal() {
     populateSkillsSelect('taskSkills', [], document.getElementById('taskType')?.value || 'RE');
   }
 
-  loadMcpServersForNewTask();
 }
