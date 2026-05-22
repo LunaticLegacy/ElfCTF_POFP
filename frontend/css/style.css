@@ -633,21 +633,22 @@ main {
 
 .task-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
 }
 
 .task-card {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 16px;
+  padding: 18px 18px 22px;
   cursor: pointer;
   transition: all var(--transition-slow);
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  min-height: 296px;
 }
 
 .task-card::before {
@@ -772,7 +773,7 @@ main {
 }
 
 .task-log-area {
-  padding: 10px 14px;
+  padding: 12px 14px;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -807,12 +808,13 @@ main {
 .task-summary-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
 }
 
 .task-summary-block {
   min-width: 0;
-  padding: 8px;
+  min-height: 86px;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
@@ -837,9 +839,11 @@ main {
 
 .task-foot {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding-top: 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
@@ -847,11 +851,26 @@ main {
   font-size: 10px;
   color: var(--text-muted);
   font-family: 'JetBrains Mono', monospace;
+  line-height: 1.45;
 }
 
 .task-actions {
   display: flex;
   gap: 5px;
+}
+
+.task-foot .task-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+
+.task-foot .task-actions .task-btn {
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  justify-content: center;
 }
 
 .task-details {

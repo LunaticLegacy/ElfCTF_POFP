@@ -9,13 +9,12 @@ import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal
 
 
 from core.json_types import JsonObject
 from modules.llmfetcher import Agent, LLMFetcher, create_ctf_tools, create_obscura_tools, create_shell_tools
 from modules.llmfetcher.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
-from modules.llmfetcher.ctf_module.ctf_tools import DEFAULT_FLAG_PATTERN
 from modules.llmfetcher.tools.ctf_tools import create_knowledge_tools
 from modules.rag.knowledge_base import KnowledgeBase
 
@@ -73,10 +72,15 @@ class _TaskVerboseLogWriter:
         Returns:
             Number of characters consumed from the input chunk.
         """
+        # Ignore empty chunks so the log stream stays free from no-op writes.
         if not text:
             return 0
+
+        # Mirror raw text into the server terminal only when a mirror stream is configured.
         if self.mirror_stream is not None:
             self.mirror_stream.write(text)
+
+        # Reassemble partial writes into complete lines before persisting them as task logs.
         self._buffer += text
         while '\n' in self._buffer:
             line, self._buffer = self._buffer.split('\n', 1)
@@ -85,9 +89,12 @@ class _TaskVerboseLogWriter:
 
     def flush(self) -> None:
         """Flush any buffered partial line into the task log."""
+        # Persist the final buffered fragment so the tail of the verbose stream is not lost.
         if self._buffer.strip():
             self._emit_line(self._buffer)
         self._buffer = ''
+
+        # Flush the underlying mirror stream so terminal output stays in sync with task logs.
         if self.mirror_stream is not None:
             self.mirror_stream.flush()
 
@@ -97,16 +104,13 @@ class _TaskVerboseLogWriter:
         Args:
             line: One logical line extracted from the captured stream.
         """
+        # Drop empty lines after normalization to avoid noisy blank task logs.
         normalized = str(line).rstrip('\r')
         if not normalized.strip():
             return
+
+        # Prefix and persist the verbose line into the task log timeline.
         self.task_manager.add_log(self.task_id, f'{self.prefix}: {normalized}')
-
-
-def _contains_flag(text: str, pattern: str = DEFAULT_FLAG_PATTERN) -> bool:
-    """Return whether a piece of text looks like a captured CTF flag."""
-    return bool(text and re.search(pattern, text))
-
 
 def _resolve_backend_provider(connector_type: str) -> str:
     """Map a saved connector type to the LLM backend provider.
@@ -142,7 +146,7 @@ class CTFWorkflowService:
 
     def __init__(
         self, 
-        task_manager: TaskManager, 
+        task_manager: "TaskManager", 
         *, 
         skills_root: Path | str = 'ctf-skills', 
         kb_root: Path | str = 'kb'
@@ -239,12 +243,15 @@ class CTFWorkflowService:
         Run a task workflow inside a private event loop.
         目测该内容是启动任务用的，其底层使用的是协程。
         """
+        # Run the agent workflow inside an isolated event loop for this background thread.
         try:
             asyncio.run(self._run_agent(task_id, runtime_config, stop_event, mode))
         except Exception as exc:
+            # Record the failure in task logs and task status so polling UIs can surface the error.
             self.task_manager.add_log(task_id, f'任务失败: {exc}')
             self.task_manager.update_status(task_id, TaskStatus.FAILED, error=str(exc))
         finally:
+            # Always release thread-local bookkeeping after the worker exits.
             self._threads.pop(task_id, None)
             self._stop_events.pop(task_id, None)
 
@@ -256,7 +263,7 @@ class CTFWorkflowService:
         mode: Literal["start", "retry", "continue"]
     ) -> None:
         """Build and execute the LLM agent for one task.
-        这块代码将是工人代码。
+        这是工人代码，代码将在这里运行。
 
         Args:
             task_id: Task identifier.
@@ -268,6 +275,7 @@ class CTFWorkflowService:
             Mirrors the agent's stdout/stderr into the task log stream so the
             frontend can display live verbose output on the next refresh tick.
         """
+        # Resolve the task and exit early if it disappeared or was already stopped.
         task = self.task_manager.get_task(task_id)  # 先拉任务的名，如果没有任务则退出。
         if task is None:
             return
@@ -324,12 +332,24 @@ class CTFWorkflowService:
             max_concurrent_tools=4,
         )
         prompt = self._user_prompt(task, mode)
+
+        # Seed task artifacts that the frontend can show even before the run finishes.
+        self.task_manager.set_task_artifact(task_id, 'workspace_dir', str(workspace))
+        self.task_manager.set_task_artifact(task_id, 'pending_new_input', task.pending_new_input)
+        self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
+
+        # Emit the standard run metadata into the human-readable task log stream.
         self.task_manager.add_log(task_id, f'已加载技能: {", ".join(classification.skill_ids)}')
         self.task_manager.add_log(
             task_id,
             f'LLM provider: {provider} · tool provider: {tool_provider} · connector: {runtime_config.connector_type}',
         )
-        verbose_writer = _TaskVerboseLogWriter(task_id, self.task_manager, mirror_stream=sys.__stdout__)
+
+        # Build the optional terminal mirror stream from runtime config without affecting task-log capture.
+        mirror_stream = sys.__stdout__ if runtime_config.show_terminal_output else None
+
+        # Execute the agent while always capturing verbose output into task logs.
+        verbose_writer = _TaskVerboseLogWriter(task_id, self.task_manager, mirror_stream=mirror_stream)
         with contextlib.redirect_stdout(verbose_writer), contextlib.redirect_stderr(verbose_writer):
             # 这里是模型的主线，在该函数内执行 agent 执行轮。
             # 注意：runtime_configure.temperature 可能没有从前端被正确传入。
@@ -341,16 +361,76 @@ class CTFWorkflowService:
                 temperature=runtime_config.temperature if runtime_config.temperature is not None else 0.4,
                 max_tokens=runtime_config.max_tokens if runtime_config.max_tokens is not None else 4096,
                 stop_callback=stop_event.is_set,
-                flag_pattern=DEFAULT_FLAG_PATTERN,
             )
         verbose_writer.flush()
+
+        # Refresh persisted context artifacts after the agent loop has produced final state.
+        self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
+        self.task_manager.set_task_artifact(task_id, 'pending_new_input', task.pending_new_input)
+
+        # Finalize task lifecycle based on stop state and detected terminal result.
         if stop_event.is_set():
             self.task_manager.update_status(task_id, TaskStatus.STOPPED)
             return
-        if _contains_flag(result):
-            self.task_manager.add_log(task_id, '检测到 flag，任务已结束')
+
         self.task_manager.add_log(task_id, 'Agent workflow 已完成')
         self.task_manager.update_status(task_id, TaskStatus.COMPLETED, result=result)
+
+    def _build_agent_context_snapshot(self, agent: Agent) -> Dict[str, Any]:
+        """Build a frontend-facing snapshot of the current Agent context state.
+
+        Args:
+            agent: Running Agent whose context and memories should be exposed.
+
+        Returns:
+            JSON-serializable payload grouped into uncompacted, compacted, and memory sections.
+        """
+        # Read the live context manager once so all derived sections share the same snapshot moment.
+        context_handler = agent.context_manager
+
+        # Serialize uncompacted entries with stable ids, roles, previews, and tool metadata.
+        uncompacted_entries = []
+        for context_id, entry in sorted(context_handler.context_dict_uncompacted.items()):
+            uncompacted_entries.append({
+                'id': context_id,
+                'role': entry.role,
+                'content': entry.content,
+                'tool_call_info': list(entry.tool_call_info or []),
+                'tool_call_result': list(entry.tool_call_result or []),
+                'tags': list(entry.tags or []),
+            })
+
+        # Serialize compacted entries with their source links and abstract summaries.
+        compacted_entries = []
+        compacted_items = []
+        for _, entry in context_handler.context_dict_compacted.items():
+            context_id = context_handler.context_raw_dict_reversed.get(id(entry))
+            compacted_items.append((context_id if context_id is not None else -1, entry))
+        for context_id, entry in sorted(compacted_items, key=lambda item: item[0]):
+            compacted_entries.append({
+                'id': context_id,
+                'abstract_msg': entry.abstract_msg,
+                'source_ids': list(entry.source_ids),
+                'tags': list(entry.tags or []),
+            })
+
+        # Copy persistent memory summaries so the task snapshot stays detached from the Agent object.
+        memory_entries = [
+            {'id': index, 'content': memory}
+            for index, memory in enumerate(agent.copy_memories())
+        ]
+
+        # Return both raw sections and small counters so the frontend can render summary chips.
+        return {
+            'uncompacted': uncompacted_entries,
+            'compacted': compacted_entries,
+            'memories': memory_entries,
+            'stats': {
+                'uncompacted_count': len(uncompacted_entries),
+                'compacted_count': len(compacted_entries),
+                'memory_count': len(memory_entries),
+            },
+        }
 
     def _base_system_prompt(self, task: CTFTask, workspace: Path) -> str:
         """Build the base system prompt for a CTF solving agent."""
@@ -360,7 +440,7 @@ Work only inside this task workspace: {workspace}
 
 Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
 Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
-When you find a flag, save it to flag.txt and include it in the final answer.
+When you find a flag, save it to flag.txt, and then summarize how to proceed at proceed.md. Then reply "Finish." without tool call to finish.
 
 Task name: {task.config.name}
 Task type: {task.config.task_type.value}

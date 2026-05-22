@@ -37,6 +37,7 @@ class RuntimeConfig:
         aggressive_compress_ratio: Threshold for aggressive compression.
         emergency_compress_ratio: Threshold for emergency compression.
         long_term_memory_enabled: Whether long-term memory should be used.
+        show_terminal_output: Whether agent verbose stdout/stderr should be mirrored to the server terminal.
         connector_type: Connector family selected by the user.
     """
 
@@ -56,6 +57,7 @@ class RuntimeConfig:
     aggressive_compress_ratio: float = 0.85
     emergency_compress_ratio: float = 0.95
     long_term_memory_enabled: bool = True
+    show_terminal_output: bool = True
     connector_type: str = 'litellm'
 
     def to_dict(self) -> Dict[str, Any]:
@@ -192,6 +194,7 @@ class CTFTask:
         created_at: Unix timestamp for creation.
         updated_at: Unix timestamp for last mutation.
         pending_new_input: Extra user input saved for continuation.
+        artifacts: Structured task-side runtime artifacts exposed to the frontend.
     """
 
     id: str
@@ -205,9 +208,11 @@ class CTFTask:
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
     pending_new_input: str = ''
+    artifacts: Dict[str, Any] = field(default_factory=dict)
 
     def touch(self) -> None:
         """Refresh the mutation timestamp for this task."""
+        # Update the mutable timestamp every time task-visible state changes.
         self.updated_at = time.time()
 
     def add_log(self, message: str) -> None:
@@ -219,6 +224,25 @@ class CTFTask:
         # Store compact local timestamps so the UI can stream useful progress.
         timestamp = time.strftime('%Y-%m-%d %H:%M:%S')
         self.logs.append(f'[{timestamp}] {message}')
+
+        # Keep the task freshness marker aligned with the appended log line.
+        self.touch()
+
+    def set_artifact(self, key: str, value: Any) -> None:
+        """Set one named runtime artifact and refresh task timestamps.
+
+        Args:
+            key: Artifact namespace stored under `task.artifacts`.
+            value: JSON-serializable payload exposed to the frontend.
+        """
+        # Ensure the artifact dictionary exists before writing into it.
+        if not isinstance(self.artifacts, dict):
+            self.artifacts = {}
+
+        # Update the named artifact entry with the newest runtime snapshot.
+        self.artifacts[key] = value
+
+        # Mark the task as updated after mutating artifact state.
         self.touch()
 
     def to_dict(self) -> Dict[str, Any]:
@@ -229,6 +253,10 @@ class CTFTask:
         """
         # Flatten common config fields because the frontend reads them directly.
         config = self.config
+
+        # Normalize artifacts into a predictable dictionary for task detail panels.
+        artifacts = self.artifacts if isinstance(self.artifacts, dict) else {}
+
         return {
             'id': self.id,
             'user_id': self.user_id,
@@ -258,6 +286,7 @@ class CTFTask:
             'created_at': self.created_at,
             'updated_at': self.updated_at,
             'pendingNewInput': self.pending_new_input,
+            'artifacts': artifacts,
         }
 
 

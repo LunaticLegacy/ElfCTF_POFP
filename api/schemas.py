@@ -24,6 +24,36 @@ from core.models import (
 from services.tasks.manager import UploadedTaskFile
 
 
+def _coerce_bool(value: Any, default: bool = False) -> bool:
+    """Normalize loose JSON boolean-like values into a strict bool.
+
+    Args:
+        value: Raw payload value that may already be boolean-like.
+        default: Fallback value used when the payload omits the field.
+
+    Returns:
+        A normalized boolean value suitable for config dataclasses.
+    """
+    # Return the default immediately for missing values so callers can keep explicit defaults.
+    if value is None:
+        return default
+
+    # Preserve native booleans without reinterpretation.
+    if isinstance(value, bool):
+        return value
+
+    # Interpret common string booleans emitted by browsers, forms, or older clients.
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {'1', 'true', 'yes', 'on'}:
+            return True
+        if normalized in {'0', 'false', 'no', 'off', ''}:
+            return False
+
+    # Fall back to Python truthiness for remaining scalar values.
+    return bool(value)
+
+
 @dataclass
 class ApiEnvelope:
     """Represent the shared response envelope used by every API route.
@@ -101,6 +131,7 @@ class ConfigUpdateRequest:
         aggressive_compress_ratio: Ratio that triggers aggressive compression.
         emergency_compress_ratio: Ratio that triggers emergency compression.
         long_term_memory_enabled: Whether long-term memory is enabled.
+        show_terminal_output: Whether agent verbose stdout/stderr should be mirrored to the server terminal.
         connector_type: Normalized LLM connector type.
     """
 
@@ -120,6 +151,7 @@ class ConfigUpdateRequest:
     aggressive_compress_ratio: float = 0.85
     emergency_compress_ratio: float = 0.95
     long_term_memory_enabled: bool = True
+    show_terminal_output: bool = True
     connector_type: str = 'litellm'
 
     @classmethod
@@ -137,6 +169,9 @@ class ConfigUpdateRequest:
         temp = payload.get('temperature')
         mt = payload.get('max_tokens')
         connector_type = normalize_connector_type(payload.get('connector_type', 'litellm'))
+
+        # Normalize the terminal mirror toggle into a stable boolean field.
+        show_terminal_output = _coerce_bool(payload.get('show_terminal_output'), True)
         return cls(
             api_key=str(payload.get('api_key', '')),
             api_base=str(payload.get('api_base', '')),
@@ -153,7 +188,8 @@ class ConfigUpdateRequest:
             mild_offload_ratio=float(payload.get('mild_offload_ratio', 0.5)),
             aggressive_compress_ratio=float(payload.get('aggressive_compress_ratio', 0.85)),
             emergency_compress_ratio=float(payload.get('emergency_compress_ratio', 0.95)),
-            long_term_memory_enabled=bool(payload.get('long_term_memory_enabled', True)),
+            long_term_memory_enabled=_coerce_bool(payload.get('long_term_memory_enabled'), True),
+            show_terminal_output=show_terminal_output,
             connector_type=connector_type,
         )
 

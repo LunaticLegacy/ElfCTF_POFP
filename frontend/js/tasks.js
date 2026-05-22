@@ -274,7 +274,7 @@ function renderTasks(tasks) {
           <div class="task-actions">
             <button class="task-btn primary" onclick="openTaskDetailModal('${safeId}')">查看详情</button>
             ${actionButtons}
-            <button class="task-btn danger" onclick="event.stopPropagation();onTaskDeleteClick(this)">删除</button>
+            <button class="task-btn danger" onclick="event.stopPropagation();onTaskDeleteClick('${safeId}', this)">删除</button>
           </div>
         </div>
       </div>
@@ -892,17 +892,24 @@ function setTaskNewInputFeedback(taskId, type, message, options = {}) {
 }
 
 /**
- * 构建任务详情区所需的工程信息与 LLM 输出。
+ * Build the normalized data model consumed by the task detail modal.
+ *
+ * @param {Object} task - Raw backend task snapshot.
+ * @returns {Object} Fully normalized detail-view model for rendering.
  */
 function buildTaskDetailData(task) {
+  // Split persisted task logs into rendered LLM outputs and engineering traces.
   const llmOutputs = [];
   const engineeringLogs = [];
+
+  // Normalize structured backend artifacts into frontend-friendly detail models.
   const thinkingGraph = normalizeTaskThinkingGraph(task.artifacts?.thinking_graph_state, task.artifacts || {});
   const knowledgeHarvestState = task.artifacts?.knowledge_harvest_state && typeof task.artifacts.knowledge_harvest_state === 'object'
     ? task.artifacts.knowledge_harvest_state
     : {};
   const swarmRuns = normalizeTaskSwarmRuns(task.artifacts?.swarm_runs, knowledgeHarvestState);
   const autonomousWorkflow = normalizeTaskAutonomousWorkflow(task.artifacts?.autonomous_workflow);
+  const persistedContextSnapshot = normalizeTaskContextSnapshot(task.artifacts?.context_snapshot);
   const pendingNewInput = taskDetailNewInputDraftState.has(task.id)
     ? taskDetailNewInputDraftState.get(task.id)
     : String(task.artifacts?.pending_new_input || '');
@@ -916,6 +923,7 @@ function buildTaskDetailData(task) {
         }))
     : [];
 
+  // Parse every task log line into either formal LLM output blocks or raw engineering output.
   task.logs.forEach(log => {
     const parsedOutput = parseFormalOutput(log);
     if (parsedOutput) {
@@ -925,11 +933,15 @@ function buildTaskDetailData(task) {
     }
   });
 
+  // Resolve per-task UI state and pre-split engineering traces for detail subpanes.
   const activeOutputIndex = resolveActiveOutputIndex(task.id, llmOutputs.length);
   const activeTab = resolveTaskDetailTab(task.id);
   const activeThinkingGraphPage = resolveTaskThinkingGraphPage(task.id);
   const thinkingGraphZoom = resolveTaskThinkingGraphZoom(task.id);
   const { toolLogs, verboseLogs } = splitEngineeringLogs(engineeringLogs);
+  const contextSnapshot = hasRenderableTaskContextSnapshot(persistedContextSnapshot)
+    ? persistedContextSnapshot
+    : deriveTaskContextSnapshotFromLogs(task.logs);
 
   return {
     task,
@@ -946,6 +958,7 @@ function buildTaskDetailData(task) {
     swarmRuns,
     autonomousWorkflow,
     knowledgeHarvestState,
+    contextSnapshot,
     pendingNewInput,
     newInputFeedback,
     newInputHistory,
@@ -954,6 +967,118 @@ function buildTaskDetailData(task) {
     payloadLabel: task.payload ? task.payload : '默认',
     skillsLabel: formatTaskSkillsHtml(task.skills),
     workspaceLabel: task.artifacts?.workspace_dir ? task.artifacts.workspace_dir : '未创建',
+  };
+}
+
+/**
+ * Return whether a normalized task context snapshot has any renderable entries.
+ *
+ * @param {Object} snapshot - Normalized context snapshot.
+ * @returns {boolean} `true` when any context section contains entries.
+ */
+function hasRenderableTaskContextSnapshot(snapshot) {
+  // Guard against nullish or malformed snapshot payloads before checking sections.
+  if (!snapshot || typeof snapshot !== 'object') {
+    return false;
+  }
+
+  // Treat any non-empty uncompacted, compacted, or memory section as renderable context.
+  return Boolean(
+    Array.isArray(snapshot.uncompacted) && snapshot.uncompacted.length
+    || Array.isArray(snapshot.compacted) && snapshot.compacted.length
+    || Array.isArray(snapshot.memories) && snapshot.memories.length
+  );
+}
+
+/**
+ * Derive a best-effort context snapshot from persisted task logs.
+ *
+ * @param {Array} logs - Raw task log lines as returned by the backend.
+ * @returns {Object} Synthetic normalized context snapshot grouped like the persisted format.
+ */
+function deriveTaskContextSnapshotFromLogs(logs) {
+  // Normalize the incoming log list before building fallback context entries.
+  const sourceLogs = Array.isArray(logs) ? logs.map(item => String(item || '')).filter(Boolean) : [];
+  const fallbackEntries = [];
+  let currentEntry = null;
+
+  // Group verbose logs by agent turn so each turn becomes one fallback uncompacted entry.
+  sourceLogs.forEach((logLine) => {
+    const turnMatch = logLine.match(/Executing Turn:\s*(\d+)/);
+    if (turnMatch) {
+      if (currentEntry) {
+        fallbackEntries.push(finalizeDerivedTaskContextEntry(currentEntry));
+      }
+      currentEntry = {
+        id: Number(turnMatch[1]),
+        role: 'assistant',
+        contentLines: [],
+        toolCallInfo: [],
+        toolCallResult: [],
+        tags: ['derived_from_logs'],
+      };
+      return;
+    }
+
+    if (!currentEntry || !logLine.includes('Agent verbose:')) {
+      return;
+    }
+
+    const normalizedLine = logLine.replace(/^.*?Agent verbose:\s*/, '').trim();
+    if (!normalizedLine) {
+      return;
+    }
+
+    // Split tool invocation lines, tool result lines, and generic commentary into separate buckets.
+    if (normalizedLine.startsWith('[Agent] Calling tool')) {
+      currentEntry.toolCallInfo.push(normalizedLine);
+      return;
+    }
+    if (normalizedLine.startsWith('[Agent] Result of tool')) {
+      currentEntry.toolCallResult.push(normalizedLine);
+      return;
+    }
+    if (!normalizedLine.startsWith('[Agent]')) {
+      currentEntry.contentLines.push(normalizedLine);
+    }
+  });
+
+  // Flush the final open turn after the log scan finishes.
+  if (currentEntry) {
+    fallbackEntries.push(finalizeDerivedTaskContextEntry(currentEntry));
+  }
+
+  // Return a normalized empty-compatible snapshot so the renderer can stay unchanged.
+  return {
+    uncompacted: fallbackEntries.filter(entry => entry.content || entry.toolCallInfo.length || entry.toolCallResult.length),
+    compacted: [],
+    memories: [],
+    stats: {
+      uncompactedCount: fallbackEntries.length,
+      compactedCount: 0,
+      memoryCount: 0,
+    },
+  };
+}
+
+/**
+ * Finalize one log-derived context entry into the normalized frontend shape.
+ *
+ * @param {Object} draftEntry - Mutable in-progress fallback entry built from logs.
+ * @returns {Object} Normalized fallback context entry.
+ */
+function finalizeDerivedTaskContextEntry(draftEntry) {
+  // Collapse collected commentary lines into one readable context content block.
+  const content = draftEntry.contentLines.join('\n').trim();
+
+  // Return the same field names used by persisted context snapshots.
+  return {
+    id: draftEntry.id,
+    role: draftEntry.role,
+    content,
+    toolCallInfo: draftEntry.toolCallInfo,
+    toolCallResult: draftEntry.toolCallResult,
+    tags: draftEntry.tags,
   };
 }
 
@@ -1192,20 +1317,41 @@ function setTaskDetailOutputPage(taskId, nextIndex) {
   requestAnimationFrame(() => syncThinkingGraphFloatingLabel(taskId));
 }
 
+/**
+ * Resolve the persisted active tab for one task detail modal.
+ *
+ * @param {string} taskId - Task identifier whose tab state should be restored.
+ * @returns {string} Normalized active tab id.
+ */
 function resolveTaskDetailTab(taskId) {
+  // Read the saved tab state and accept only tabs supported by the renderer.
   const savedTab = taskDetailTabState.get(taskId);
-  if (savedTab === 'llm' || savedTab === 'progress' || savedTab === 'learning' || savedTab === 'graph' || savedTab === 'swarm') {
+  if (savedTab === 'llm' || savedTab === 'progress' || savedTab === 'context' || savedTab === 'learning' || savedTab === 'graph' || savedTab === 'swarm') {
     return savedTab;
   }
+
+  // Fall back to the progress tab when no valid persisted state exists.
   taskDetailTabState.set(taskId, 'progress');
   return 'progress';
 }
 
+/**
+ * Persist and switch the active task detail tab, then re-render the modal body.
+ *
+ * @param {string} taskId - Task identifier whose detail tab is changing.
+ * @param {string} nextTab - Requested tab id from the UI.
+ * @returns {void}
+ */
 function setTaskDetailTab(taskId, nextTab) {
+  // Resolve the latest task snapshot before mutating tab-specific UI state.
   const task = latestTaskPayload.find(t => t.id === taskId);
   if (!task) return;
-  const normalizedTab = ['progress', 'llm', 'learning', 'graph', 'swarm'].includes(nextTab) ? nextTab : 'progress';
+
+  // Normalize the requested tab so unsupported values snap back to progress.
+  const normalizedTab = ['progress', 'llm', 'context', 'learning', 'graph', 'swarm'].includes(nextTab) ? nextTab : 'progress';
   taskDetailTabState.set(taskId, normalizedTab);
+
+  // Re-render the detail body so the newly selected tab becomes visible immediately.
   document.getElementById('taskDetailContent').innerHTML = renderTaskDetailModal(buildTaskDetailData(task));
   requestAnimationFrame(() => syncThinkingGraphFloatingLabel(taskId));
 }
@@ -2098,6 +2244,153 @@ function normalizeTaskSwarmRuns(rawValue, knowledgeHarvestState = null) {
   }
 
   return [...solverRuns, ...learningRuns];
+}
+
+/**
+ * Normalize a backend task context snapshot into stable frontend arrays.
+ *
+ * @param {*} rawValue - Raw backend `artifacts.context_snapshot` payload.
+ * @returns {Object} Normalized uncompacted, compacted, memory, and stats sections.
+ */
+function normalizeTaskContextSnapshot(rawValue) {
+  // Normalize the root payload before reading nested context sections.
+  const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
+
+  // Normalize uncompacted entries into a stable array of strings and metadata.
+  const uncompacted = Array.isArray(source.uncompacted)
+    ? source.uncompacted
+        .filter(item => item && typeof item === 'object')
+        .map(item => ({
+          id: Number(item.id ?? 0),
+          role: String(item.role || '').trim(),
+          content: String(item.content || '').trim(),
+          toolCallInfo: Array.isArray(item.tool_call_info) ? item.tool_call_info.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+          toolCallResult: Array.isArray(item.tool_call_result) ? item.tool_call_result.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+          tags: Array.isArray(item.tags) ? item.tags.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+        }))
+    : [];
+
+  // Normalize compacted entries into summary objects with source links.
+  const compacted = Array.isArray(source.compacted)
+    ? source.compacted
+        .filter(item => item && typeof item === 'object')
+        .map(item => ({
+          id: Number(item.id ?? 0),
+          abstractMsg: String(item.abstract_msg || '').trim(),
+          sourceIds: Array.isArray(item.source_ids) ? item.source_ids.map(entry => Number(entry ?? 0)).filter(Number.isFinite) : [],
+          tags: Array.isArray(item.tags) ? item.tags.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+        }))
+    : [];
+
+  // Normalize persistent memories into a flat ordered array for rendering.
+  const memories = Array.isArray(source.memories)
+    ? source.memories
+        .filter(item => item && typeof item === 'object')
+        .map(item => ({
+          id: Number(item.id ?? 0),
+          content: String(item.content || '').trim(),
+        }))
+    : [];
+
+  // Derive counters from normalized data unless the backend already provided them.
+  const rawStats = source.stats && typeof source.stats === 'object' ? source.stats : {};
+  return {
+    uncompacted,
+    compacted,
+    memories,
+    stats: {
+      uncompactedCount: Number.isFinite(Number(rawStats.uncompacted_count)) ? Number(rawStats.uncompacted_count) : uncompacted.length,
+      compactedCount: Number.isFinite(Number(rawStats.compacted_count)) ? Number(rawStats.compacted_count) : compacted.length,
+      memoryCount: Number.isFinite(Number(rawStats.memory_count)) ? Number(rawStats.memory_count) : memories.length,
+    },
+  };
+}
+
+/**
+ * Render one structured context section inside the task detail context tab.
+ *
+ * @param {string} title - Section title shown to the user.
+ * @param {Array} entries - Normalized context entries for this section.
+ * @param {string} kind - Section kind: uncompacted, compacted, or memory.
+ * @returns {string} HTML for one context section.
+ */
+function renderTaskContextSection(title, entries, kind) {
+  // Render either the entry list or a stable empty-state placeholder for this section.
+  const bodyHtml = Array.isArray(entries) && entries.length
+    ? entries.map(entry => renderTaskContextEntry(entry, kind)).join('')
+    : `<div class="task-thinking-empty">当前没有${escapeHtml(title)}上下文。</div>`;
+
+  // Wrap the rendered section body in the same card shell used by other detail tabs.
+  return `
+    <section class="task-thinking-section">
+      <div class="task-thinking-section-title">${escapeHtml(title)}</div>
+      <div class="task-context-stack">${bodyHtml}</div>
+    </section>
+  `;
+}
+
+/**
+ * Render one normalized task context entry.
+ *
+ * @param {Object} entry - Normalized context entry.
+ * @param {string} kind - Entry kind: uncompacted, compacted, or memory.
+ * @returns {string} HTML for one context item card.
+ */
+function renderTaskContextEntry(entry, kind) {
+  // Render raw uncompacted context entries with role, tags, and tool traces.
+  if (kind === 'uncompacted') {
+    const toolInfoHtml = entry.toolCallInfo.length
+      ? `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">工具调用</div>
+          <pre class="task-thinking-code">${escapeHtml(entry.toolCallInfo.join('\n\n'))}</pre>
+        </div>
+      `
+      : '';
+    const toolResultHtml = entry.toolCallResult.length
+      ? `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">工具结果</div>
+          <pre class="task-thinking-code">${escapeHtml(entry.toolCallResult.join('\n\n'))}</pre>
+        </div>
+      `
+      : '';
+    return `
+      <div class="task-context-card">
+        <div class="task-context-card-head">
+          <div class="task-context-card-title">#${escapeHtml(String(entry.id))} · ${escapeHtml(entry.role || 'unknown')}</div>
+          <div class="task-context-chip">${escapeHtml((entry.tags || []).join(' · ') || '无标签')}</div>
+        </div>
+        <pre class="task-thinking-code">${escapeHtml(entry.content || '空内容')}</pre>
+        ${toolInfoHtml}
+        ${toolResultHtml}
+      </div>
+    `;
+  }
+
+  // Render compacted context entries with their summary text and source links.
+  if (kind === 'compacted') {
+    return `
+      <div class="task-context-card">
+        <div class="task-context-card-head">
+          <div class="task-context-card-title">#${escapeHtml(String(entry.id))} · 压缩摘要</div>
+          <div class="task-context-chip">${escapeHtml((entry.tags || []).join(' · ') || '无标签')}</div>
+        </div>
+        <div class="task-context-card-meta">source_ids: ${escapeHtml((entry.sourceIds || []).join(', ') || '无')}</div>
+        <pre class="task-thinking-code">${escapeHtml(entry.abstractMsg || '空摘要')}</pre>
+      </div>
+    `;
+  }
+
+  // Render persistent memories as simple ordered summary cards.
+  return `
+    <div class="task-context-card">
+      <div class="task-context-card-head">
+        <div class="task-context-card-title">Memory #${escapeHtml(String(entry.id))}</div>
+      </div>
+      <pre class="task-thinking-code">${escapeHtml(entry.content || '空记忆')}</pre>
+    </div>
+  `;
 }
 
 function normalizeTaskAutonomousWorkflow(rawValue) {
@@ -4232,9 +4525,13 @@ function renderTaskDetails(detailData) {
 }
 
 /**
- * 渲染任务详情浮窗内容（工程块 + LLM输出块）
+ * Render the full task detail modal, including all tab pages and action areas.
+ *
+ * @param {Object} detailData - Normalized task detail model from `buildTaskDetailData`.
+ * @returns {string} HTML string for the task detail modal body.
  */
 function renderTaskDetailModal(detailData) {
+  // Unpack all normalized detail-view inputs once so later sections stay declarative.
   const {
     task,
     llmOutputs,
@@ -4248,6 +4545,7 @@ function renderTaskDetailModal(detailData) {
     swarmRuns,
     autonomousWorkflow,
     knowledgeHarvestState,
+    contextSnapshot,
     pendingNewInput,
     newInputFeedback,
     newInputHistory,
@@ -4258,6 +4556,8 @@ function renderTaskDetailModal(detailData) {
     workspaceLabel,
     skillsLabel
   } = detailData;
+
+  // Clamp invalid tab state to tabs that the current task configuration actually supports.
   const effectiveActiveTab = activeTab === 'graph' && !isTaskThinkingGraphModeEnabled(task)
     ? 'progress'
     : activeTab === 'swarm' && task.executionMode !== 'swarm'
@@ -4337,6 +4637,8 @@ function renderTaskDetailModal(detailData) {
     `
     : '<div class="llm-empty-state">暂无 LLM 输出<br>等待任务完成后，这里会展示渲染后的 Markdown 报告</div>';
   const llmPagerHtml = renderLlmOutputPager(task.id, llmOutputs, activeOutputIndex);
+
+  // Build the top-level task detail tabs, including the structured context snapshot view.
   const tabsHtml = `
     <div class="task-detail-tabs">
       <button
@@ -4352,6 +4654,13 @@ function renderTaskDetailModal(detailData) {
         onclick="setTaskDetailTab('${task.id}', 'llm')"
       >
         LLM 输出
+      </button>
+      <button
+        class="task-detail-tab ${effectiveActiveTab === 'context' ? 'active' : ''}"
+        type="button"
+        onclick="setTaskDetailTab('${task.id}', 'context')"
+      >
+        上下文
       </button>
       ${isLearningWorkflowTask(task) ? `
         <button
@@ -4383,6 +4692,7 @@ function renderTaskDetailModal(detailData) {
     </div>
   `;
 
+  // Render the progress page with status, config, and streamed engineering logs.
   const progressPageHtml = `
     <div class="task-progress-root">
       <div class="task-progress-hero">
@@ -4490,6 +4800,7 @@ function renderTaskDetailModal(detailData) {
     </div>
   `;
 
+  // Render the LLM output page with markdown output and pagination controls.
   const llmPageHtml = `
     <div class="task-detail-page">
       <div class="task-detail-panel task-detail-llm task-detail-panel-full">
@@ -4505,6 +4816,33 @@ function renderTaskDetailModal(detailData) {
     </div>
   `;
 
+  // Render the structured context snapshot page from backend-persisted Agent state.
+  const contextMetricsHtml = [
+    ['未压缩', String(contextSnapshot.stats.uncompactedCount)],
+    ['压缩', String(contextSnapshot.stats.compactedCount)],
+    ['记忆', String(contextSnapshot.stats.memoryCount)],
+  ].map(([label, value]) => renderThinkingGraphMetric(label, value)).join('');
+  const contextPageHtml = `
+    <div class="task-detail-page task-detail-page-compact">
+      <div class="task-detail-panel task-detail-panel-full">
+        <div class="task-detail-panel-header">
+          <div class="task-detail-panel-title">🧠 当前上下文</div>
+          <div style="font-size:11px;color:var(--text-3)">展示 Agent 当前持有的未压缩、压缩和记忆快照</div>
+        </div>
+        <div class="task-detail-panel-body task-thinking-graph task-context-body" data-scroll-key="contextSnapshot">
+          <section class="task-thinking-section">
+            <div class="task-thinking-section-title">上下文概览</div>
+            <div class="task-thinking-metrics">${contextMetricsHtml}</div>
+          </section>
+          ${renderTaskContextSection('未压缩', contextSnapshot.uncompacted, 'uncompacted')}
+          ${renderTaskContextSection('压缩', contextSnapshot.compacted, 'compacted')}
+          ${renderTaskContextSection('记忆', contextSnapshot.memories, 'memory')}
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Normalize learning-pipeline state into metric cards and collection sections.
   const discoveryCandidates = Array.isArray(knowledgeHarvestState.discovery_candidates) ? knowledgeHarvestState.discovery_candidates : [];
   const sourceDocuments = Array.isArray(knowledgeHarvestState.source_documents) ? knowledgeHarvestState.source_documents : [];
   const replayArtifacts = Array.isArray(knowledgeHarvestState.replay_artifacts) ? knowledgeHarvestState.replay_artifacts : [];
@@ -4923,6 +5261,7 @@ function renderTaskDetailModal(detailData) {
     </div>
   `;
 
+  // Render the continuation input panel that injects extra user guidance into later runs.
   const newInputHistoryHtml = newInputHistory.length
     ? newInputHistory.map(item => `
         <div class="task-new-input-history-item">
@@ -4959,10 +5298,13 @@ function renderTaskDetailModal(detailData) {
     </div>
   `;
   
+  // Choose the active detail page and keep the footer actions outside tab-specific content.
   return `
     ${tabsHtml}
     ${effectiveActiveTab === 'llm'
       ? llmPageHtml
+      : effectiveActiveTab === 'context'
+        ? contextPageHtml
       : effectiveActiveTab === 'learning'
         ? learningPageHtml
       : effectiveActiveTab === 'graph'

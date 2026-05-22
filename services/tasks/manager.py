@@ -66,6 +66,7 @@ class TaskManager:
 
     def _task_from_dict(self, data: dict) -> CTFTask:
         """Reconstruct a task dataclass from persisted JSON."""
+        # Rebuild the editable task configuration from persisted scalar fields.
         config = CTFTaskConfig(
             name=str(data.get('name', '')),
             task_type=TaskType(str(data.get('task_type', data.get('type', 'RE'))).upper()),
@@ -85,6 +86,12 @@ class TaskManager:
             learning_focus_keywords=list(data.get('learningFocusKeywords', data.get('learning_focus_keywords', []))),
             learning_exclude_keywords=list(data.get('learningExcludeKeywords', data.get('learning_exclude_keywords', []))),
         )
+
+        # Normalize persisted runtime artifacts so frontend detail views can consume them.
+        artifacts = data.get('artifacts', {})
+        normalized_artifacts = artifacts if isinstance(artifacts, dict) else {}
+
+        # Rebuild the persisted task snapshot including logs, result fields, and artifacts.
         return CTFTask(
             id=str(data['id']),
             user_id=str(data.get('user_id', 'default')),
@@ -97,12 +104,16 @@ class TaskManager:
             created_at=float(data.get('created_at', 0) or 0),
             updated_at=float(data.get('updated_at', 0) or 0),
             pending_new_input=str(data.get('pendingNewInput', data.get('pending_new_input', ''))),
+            artifacts=normalized_artifacts,
         )
 
     def _persist_task(self, task: CTFTask) -> None:
         """Persist one task to its metadata file."""
+        # Ensure the task directory exists before writing metadata.
         task_dir = self.tasks_dir / task.id
         task_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write the full task snapshot so backend and frontend share one source of truth.
         self._task_file(task.id).write_text(json.dumps(task.to_dict(), ensure_ascii=False, indent=2), encoding='utf-8')
 
     def create_task(self, config: CTFTaskConfig, *, user_id: str) -> CreateTaskResult:
@@ -211,11 +222,48 @@ class TaskManager:
 
     def save_pending_new_input(self, task_id: str, new_input: str) -> Optional[CTFTask]:
         """Save additional user input for a future workflow step."""
+        # Resolve the task before mutating continuation input state.
         task = self._tasks.get(task_id)
         if task is None:
             return None
+
+        # Persist the pending input into the primary task field and mirrored artifact.
         task.pending_new_input = new_input
+        task.set_artifact('pending_new_input', new_input)
         task.add_log('已保存新的用户输入' if new_input else '已清空新的用户输入')
+
+        # Flush the updated input state to disk so the next refresh sees it.
+        self._persist_task(task)
+        return task
+
+    def set_task_artifact(
+        self,
+        task_id: str,
+        key: str,
+        value: object,
+        *,
+        user_id: Optional[str] = None,
+    ) -> Optional[CTFTask]:
+        """Persist one named runtime artifact on a task.
+
+        Args:
+            task_id: Task receiving the artifact update.
+            key: Artifact namespace stored under `task.artifacts`.
+            value: JSON-serializable artifact payload.
+            user_id: Optional owner guard for scoped updates.
+
+        Returns:
+            Updated task when found, otherwise `None`.
+        """
+        # Resolve the task under optional ownership checks before mutating artifacts.
+        task = self.get_task(task_id, user_id=user_id)
+        if task is None:
+            return None
+
+        # Apply the artifact update to the task in-memory snapshot.
+        task.set_artifact(key, value)
+
+        # Persist the artifact mutation immediately for frontend polling consumers.
         self._persist_task(task)
         return task
 

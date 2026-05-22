@@ -96,12 +96,20 @@ function isKimiCodingApiBase(apiBase) {
   }
 }
 
+/**
+ * Persist the current runtime configuration edited in the config modal.
+ *
+ * @param {HTMLElement | null | undefined} triggerBtn - Button that triggered the save action.
+ * @returns {Promise<void>} Resolves after the save request and UI updates finish.
+ */
 async function onSaveConfigClick(triggerBtn) {
+  // Abort early when the user is unauthenticated or the trigger button is unavailable.
   if (!ensureAuthenticated()) return;
   const btn = triggerBtn || event?.target;
   if (!btn) return;
   const originalText = btn.textContent;
   
+  // Read the current form state so validation and persistence use one consistent snapshot.
   const apiKey = getInputValue('apiKey');
   const apiBase = getInputValue('apiBase');
   const model = getConfiguredModelValue();
@@ -111,9 +119,11 @@ async function onSaveConfigClick(triggerBtn) {
   const timeout = Number(getInputValue('timeoutInput', '60'));
   const maxRounds = Number(getInputValue('maxRoundsInput', '50'));
   const maxContextChars = Number(getInputValue('maxContextCharsInput', '14000'));
+  const showTerminalOutput = Boolean(document.getElementById('showTerminalOutputToggle')?.checked);
   const temperature = temperatureRaw.trim() === '' ? null : Number(temperatureRaw);
   const maxTokens = maxTokensRaw.trim() === '' ? null : Number(maxTokensRaw);
 
+  // Reject malformed numeric fields before sending a partially invalid config to the backend.
   if (
     [temperature, maxTokens, timeout, maxRounds, maxContextChars].some(value => value !== null && Number.isNaN(value))
     || Number.isNaN(timeout) || Number.isNaN(maxRounds) || Number.isNaN(maxContextChars)
@@ -122,6 +132,7 @@ async function onSaveConfigClick(triggerBtn) {
     return;
   }
 
+  // Enforce model-related prerequisites that the backend depends on for a usable config.
   if (!model) {
     addLog('err', '⚙️ 配置保存失败: 请选择模型或手动输入模型');
     return;
@@ -144,14 +155,17 @@ async function onSaveConfigClick(triggerBtn) {
       max_tokens: maxTokens,
       timeout,
       max_rounds: maxRounds,
-      max_context_chars: maxContextChars
+      max_context_chars: maxContextChars,
+      show_terminal_output: showTerminalOutput
     })
   });
   
+  // Persist successful config state into local UI caches and close the modal.
   if (result.success) {
     localStorage.setItem(getUserStorageKey('ctf_api_key'), apiKey);
     localStorage.setItem(getUserStorageKey('ctf_api_base'), apiBase);
     localStorage.setItem(getUserStorageKey('ctf_connector_type'), connectorType);
+    localStorage.setItem(getUserStorageKey('ctf_show_terminal_output'), String(showTerminalOutput));
     currentUserConfigState = {
       ...currentUserConfigState,
       has_server_fallback: Boolean(result.data?.has_server_fallback),
@@ -172,6 +186,7 @@ async function onSaveConfigClick(triggerBtn) {
     addLog('ok', '⚙️ 配置已成功保存');
     closeConfigModal();
   } else {
+    // Surface backend validation failures without mutating the local cached config state.
     addLog('err', `⚙️ 配置保存失败: ${result.message}`);
   }
 }
@@ -828,23 +843,33 @@ async function onEditTaskClick() {
 }
 
 /**
- * 任务卡片 - 删除按钮
+ * Delete one task from either a task card or another task-scoped action surface.
+ *
+ * @param {string|HTMLElement} taskIdOrBtn - Preferred explicit task id, or a legacy task button element.
+ * @param {HTMLElement|null} fallbackBtn - Optional DOM element used when resolving legacy button clicks.
+ * @returns {Promise<void>}
  */
-async function onTaskDeleteClick(btn) {
+async function onTaskDeleteClick(taskIdOrBtn, fallbackBtn = null) {
+  // Verify auth state and explicit user confirmation before mutating task state.
   if (!ensureAuthenticated()) return;
   if (!confirm('确定删除此任务？')) return;
-  
-  const card = btn.closest('.task-card');
-  const taskId = card.querySelector('.task-id')?.textContent.trim();
+
+  // Resolve the task id from the explicit argument first, then fall back to legacy card DOM lookup.
+  const explicitTaskId = typeof taskIdOrBtn === 'string' ? taskIdOrBtn.trim() : '';
+  const candidateBtn = explicitTaskId ? fallbackBtn : taskIdOrBtn;
+  const card = candidateBtn?.closest?.('.task-card') || null;
+  const taskId = explicitTaskId || card?.querySelector('.task-id')?.textContent.trim() || '';
   if (!taskId) {
     addLog('err', '任务删除失败: 未找到任务编号');
     return;
   }
-  
+
+  // Call the backend deletion endpoint using the resolved stable task id.
   const result = await apiRequest(`${API_BASE}/tasks/${taskId}/delete`, {
     method: 'POST'
   });
-  
+
+  // Close affected UI surfaces and refresh the task list when deletion succeeds.
   if (result.success) {
     if (activeTaskDetailId === taskId) {
       closeTaskDetailModal();
@@ -852,6 +877,7 @@ async function onTaskDeleteClick(btn) {
     await refreshTasks();
     addLog('warn', `🗑️ 任务 ${taskId} 已删除`);
   } else {
+    // Surface the backend error when deletion is rejected or the task no longer exists.
     addLog('err', `任务删除失败: ${result.message}`);
   }
 }

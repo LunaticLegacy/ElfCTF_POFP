@@ -2,7 +2,14 @@
 // 🚀 初始化入口
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * Load the authenticated user's saved runtime configuration into the UI.
+ *
+ * @param {{ forceRefreshTasks?: boolean }} options - Optional refresh behavior for task data.
+ * @returns {Promise<void>} Resolves after config state and optional task state are refreshed.
+ */
 async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
+  // Reset all config-bound UI state immediately when no authenticated user exists.
   if (!isAuthenticated()) {
     currentUserConfigState = {
       has_server_fallback: false,
@@ -13,6 +20,10 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     };
     setInputValue('apiKey', '');
     setInputValue('apiBase', '');
+    const showTerminalToggle = document.getElementById('showTerminalOutputToggle');
+    if (showTerminalToggle) {
+      showTerminalToggle.checked = true;
+    }
     updateUserContextUi();
     if (forceRefreshTasks) {
       renderTasks([]);
@@ -21,6 +32,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     return;
   }
 
+  // Fetch the saved backend config and hydrate the settings modal with server-authoritative values.
   try {
     const result = await apiRequest(`${API_BASE}/config`);
     if (result.success && result.data) {
@@ -47,8 +59,13 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       setInputValue('timeoutInput', result.data.timeout ?? 60);
       setInputValue('maxRoundsInput', result.data.max_rounds ?? 50);
       setInputValue('maxContextCharsInput', result.data.max_context_chars ?? 14000);
+      const showTerminalToggle = document.getElementById('showTerminalOutputToggle');
+      if (showTerminalToggle) {
+        showTerminalToggle.checked = result.data.show_terminal_output !== false;
+      }
       updateUserContextUi();
 
+      // Refresh the model selector only when a usable API config exists for the current user.
       if (hasUsableApiConfig()) {
         await fetchModels();
         const preferredModel = result.data.model || result.data.effective_model;
@@ -65,6 +82,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       addLog('ok', `⚙️ 已加载账号 ${getCurrentUsername()} 的配置`);
     }
   } catch (error) {
+    // Fall back to local cached values when the backend is temporarily unreachable.
     currentUserConfigState = {
       has_server_fallback: false,
       using_server_fallback: false,
@@ -77,6 +95,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     const savedKey = localStorage.getItem(getUserStorageKey('ctf_api_key'));
     const savedBase = localStorage.getItem(getUserStorageKey('ctf_api_base'));
     const savedConnector = localStorage.getItem(getUserStorageKey('ctf_connector_type'));
+    const savedShowTerminalOutput = localStorage.getItem(getUserStorageKey('ctf_show_terminal_output'));
     setInputValue('apiKey', savedKey || '');
     setInputValue('apiBase', savedBase || '');
     if (savedConnector) {
@@ -86,8 +105,13 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
         onConnectorTypeChange();
       }
     }
+    const showTerminalToggle = document.getElementById('showTerminalOutputToggle');
+    if (showTerminalToggle && savedShowTerminalOutput !== null) {
+      showTerminalToggle.checked = savedShowTerminalOutput !== 'false';
+    }
   }
 
+  // Refresh task state after config hydration when the caller requested it.
   if (forceRefreshTasks) {
     await refreshTasks();
   }

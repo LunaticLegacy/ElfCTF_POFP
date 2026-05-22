@@ -289,6 +289,141 @@
   flex-wrap: wrap;
 }
 
+.task-context-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-context-body .task-thinking-section {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(88, 166, 255, 0.04), rgba(17, 24, 39, 0.18));
+}
+
+.task-context-body .task-thinking-section-title {
+  margin-bottom: 12px;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.task-thinking-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.task-thinking-metric {
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.task-thinking-metric-label {
+  margin-bottom: 4px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-thinking-metric-value {
+  color: var(--text);
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.task-context-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-context-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+}
+
+.task-context-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.task-context-card-title {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.task-context-card-meta {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-context-chip {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--bg);
+}
+
+.task-thinking-empty {
+  padding: 14px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: rgba(15, 23, 42, 0.38);
+  text-align: center;
+  line-height: 1.6;
+}
+
+.task-thinking-subsection {
+  margin-top: 10px;
+}
+
+.task-thinking-subtitle {
+  margin-bottom: 6px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.task-thinking-code {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid rgba(88, 166, 255, 0.14);
+  border-radius: var(--radius-sm);
+  background: #0f172a;
+  color: #dbe7ff;
+  font-size: 11px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: 'JetBrains Mono', monospace;
+}
+
 .llm-output-shell,
 .llm-empty-state,
 .task-llm-empty {
@@ -331,6 +466,12 @@
 .task-log-entry-empty {
   color: var(--text-muted);
   text-align: center;
+}
+
+@media (max-width: 720px) {
+  .task-thinking-metrics {
+    grid-template-columns: 1fr;
+  }
 }
 
 .task-new-input-panel {
