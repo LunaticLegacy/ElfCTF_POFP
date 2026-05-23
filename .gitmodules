@@ -1,0 +1,9 @@
+[submodule "modules/llmfetcher"]
+	path = modules/llmfetcher
+	url = https://github.com/LunaticLegacy/llmfetcher.git
+[submodule "modules/tree-memory"]
+	path = modules/tree-memory
+	url = https://github.com/g1g4b1t/tree-memory.git
+[submodule "ctf-skills"]
+	path = ctf-skills
+	url = https://github.com/ljagiello/ctf-skills.git
