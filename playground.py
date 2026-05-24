@@ -1,15 +1,15 @@
-
+import os
 import asyncio
 from modules.llmfetcher import LLMFetcher, LLMBackendConfig
 
 async def main():
     backend = [LLMBackendConfig(
         "1",
-        provider="anthropic",
-        api_key="sk-QGnxmhGzyNskaKqLonbpMgzjcmNhKAHIQINyJybricP2DsEA",
-        api_url="https://newapi.20200626.xyz/v1",
+        provider="openai",
+        api_key=str(os.environ.get("DEEPSEEK_API_KEY")),
+        api_url="https://api.deepseek.com",
         timeout=120.0,
-        model="gpt-5.3-codex"
+        model="deepseek-v4-flash"
         )]
 
     fetcher = LLMFetcher(backends=backend)

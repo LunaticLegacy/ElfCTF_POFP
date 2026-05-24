@@ -4,3 +4,6 @@ workspace
 # workspace
 .elfctf
 __pycache__
+
+# sk related
+./load_sk.sh
