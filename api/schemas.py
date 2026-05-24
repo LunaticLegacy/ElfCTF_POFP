@@ -153,6 +153,9 @@ class ConfigUpdateRequest:
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
     connector_type: str = 'litellm'
+    gzctf_username: str = ''
+    gzctf_password: str = ''
+    gzctf_game_url: str = ''
 
     @classmethod
     def from_payload(cls, data: Optional[Dict[str, Any]]) -> 'ConfigUpdateRequest':
@@ -191,6 +194,9 @@ class ConfigUpdateRequest:
             long_term_memory_enabled=_coerce_bool(payload.get('long_term_memory_enabled'), True),
             show_terminal_output=show_terminal_output,
             connector_type=connector_type,
+            gzctf_username=str(payload.get('gzctf_username', '')).strip(),
+            gzctf_password=str(payload.get('gzctf_password', '')),
+            gzctf_game_url=str(payload.get('gzctf_game_url', '')).strip(),
         )
 
     def to_payload(self) -> ConfigUpdatePayload:
@@ -530,6 +536,7 @@ class CreateTaskRequest:
         name: Human-readable task name.
         task_type: Task type label accepted by `TaskType`.
         target: Target challenge address or description.
+        gzctf_challenge_id: Optional explicit GZCTF challenge id for auto-submit.
         files: File metadata entries submitted by the frontend.
         system_prompt: Optional system prompt override.
         skills: Selected skill identifiers.
@@ -549,6 +556,7 @@ class CreateTaskRequest:
     name: str = ''
     task_type: str = 'RE'
     target: str = ''
+    gzctf_challenge_id: str = ''
     files: List[dict] = None
     system_prompt: str = ''
     skills: List[str] = None
@@ -587,6 +595,9 @@ class CreateTaskRequest:
             name=str(payload.get('name', '')),
             task_type=str(payload.get('type', 'RE')),
             target=str(payload.get('target', '')),
+            gzctf_challenge_id=str(
+                payload.get('gzctfChallengeId', payload.get('gzctf_challenge_id', ''))
+            ).strip(),
             files=payload.get('files', []) if isinstance(payload.get('files', []), list) else [],
             system_prompt=str(payload.get('systemPrompt', '')),
             skills=skills,
@@ -628,6 +639,7 @@ class CreateTaskRequest:
             name=self.name.strip(),
             task_type=TaskType(self.task_type.upper()),
             target=self.target.strip(),
+            gzctf_challenge_id=self.gzctf_challenge_id.strip(),
             files=files,
             system_prompt=self.system_prompt,
             skills=self.skills or [],
@@ -708,6 +720,7 @@ class TaskUpdateRequest:
     Attributes:
         name: Optional updated task name.
         target: Optional updated target.
+        gzctf_challenge_id: Optional updated explicit GZCTF challenge id.
         system_prompt: Optional updated system prompt.
         skills: Optional normalized skill list.
         selected_mcp: Optional selected MCP server.
@@ -722,6 +735,7 @@ class TaskUpdateRequest:
 
     name: Optional[str] = None
     target: Optional[str] = None
+    gzctf_challenge_id: Optional[str] = None
     system_prompt: Optional[str] = None
     skills: Optional[List[str]] = None
     selected_mcp: Optional[str] = None
@@ -785,6 +799,15 @@ class TaskUpdateRequest:
         return cls(
             name=str(payload['name']).strip() if payload.get('name') else None,
             target=str(payload['target']).strip() if payload.get('target') else None,
+            gzctf_challenge_id=(
+                str(payload['gzctfChallengeId']).strip()
+                if payload.get('gzctfChallengeId') is not None
+                else (
+                    str(payload['gzctf_challenge_id']).strip()
+                    if payload.get('gzctf_challenge_id') is not None
+                    else None
+                )
+            ),
             system_prompt=str(payload['systemPrompt']).strip() if payload.get('systemPrompt') else None,
             skills=skills,
             selected_mcp=payload.get('selectedMcp') if payload.get('selectedMcp') is not None else None,

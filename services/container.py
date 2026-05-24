@@ -14,6 +14,7 @@ from .skill_service import SkillService
 from .storage import ApplicationStorage
 from .tasks.manager import TaskManager
 from .tools.bootstrap import ToolBootstrapService
+from .gzctf_service import GZCTFService
 from core.ctf_kernel import CTFWorkflowService
 
 
@@ -24,6 +25,7 @@ class ApplicationServices:
     storage: ApplicationStorage
     auth: AuthService
     config_handler: ConfigHandler
+    gzctf_service: GZCTFService
     task_manager: TaskManager
     workflow: CTFWorkflowService
     llm_client: LLMClient
@@ -47,12 +49,14 @@ def create_services(data_dir: Path | str = '.elfctf') -> ApplicationServices:
     storage = ApplicationStorage(data_dir)
     task_manager = TaskManager(storage.get_tasks_dir())
     config_handler = ConfigHandler(storage)
+    gzctf_service = GZCTFService(storage.get_data_dir())
     return ApplicationServices(
         storage=storage,
         auth=AuthService(storage.get_database_path()),
         config_handler=config_handler,
+        gzctf_service=gzctf_service,
         task_manager=task_manager,
-        workflow=CTFWorkflowService(task_manager),
+        workflow=CTFWorkflowService(task_manager, gzctf_service=gzctf_service),
         llm_client=LLMClient(),
         skill_service=SkillService(),
         knowledge_service=KnowledgeService(task_manager),

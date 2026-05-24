@@ -46,6 +46,9 @@ let currentUserConfigState = {
   effective_model: '',
   effective_api_base: '',
   effective_connector_type: 'litellm',
+  gzctf_status_message: '',
+  gzctf_has_cookie: false,
+  gzctf_team: null,
 };
 
 // 连接器类型描述
@@ -158,13 +161,13 @@ function updateUserContextUi() {
   }
   if (scopeHint) {
     if (!isAuthenticated()) {
-      scopeHint.textContent = '请先登录账号，再管理当前用户的 API 配置。';
+      scopeHint.textContent = '请先登录账号，再管理当前用户的系统设置。';
     } else if (currentUserConfigState.using_server_fallback) {
       scopeHint.textContent = '当前登录账号未填写自己的 API，正在使用服务器兜底配置。';
     } else if (currentUserConfigState.has_server_fallback) {
       scopeHint.textContent = '当前登录账号可独立保存自己的 API；留空时会自动回退到服务器兜底配置。';
     } else {
-      scopeHint.textContent = '当前登录账号没有可用的服务器兜底 API，请保存自己的 API 配置。';
+      scopeHint.textContent = '当前登录账号没有可用的服务器兜底 API，请保存自己的系统设置。';
     }
   }
 }
@@ -271,9 +274,17 @@ async function logout() {
     using_server_fallback: false,
     effective_model: '',
     effective_api_base: '',
+    effective_connector_type: 'litellm',
+    gzctf_status_message: '',
+    gzctf_has_cookie: false,
+    gzctf_team: null,
   };
   setInputValue('apiKey', '');
   setInputValue('apiBase', '');
+  setInputValue('gzctfUsername', '');
+  setInputValue('gzctfPassword', '');
+  setInputValue('gzctfGameUrl', '');
+  updateGzctfStatusUi({});
   updateUserContextUi();
   renderTasks([]);
   updateTaskStats([]);
@@ -373,8 +384,13 @@ function applyUserContextHeaders(headers = {}) {
 }
 
 function toggleApiKeyVisibility() {
-  const input = document.getElementById('apiKey');
-  const btn = input.parentElement.querySelector('.eye-btn');
+  togglePasswordLikeVisibility('apiKey');
+}
+
+function toggleApiBaseVisibility() {
+  const input = document.getElementById('apiBase');
+  const btn = input?.parentElement?.querySelector('.eye-btn');
+  if (!input || !btn) return;
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '🙈';
@@ -384,15 +400,47 @@ function toggleApiKeyVisibility() {
   }
 }
 
-function toggleApiBaseVisibility() {
-  const input = document.getElementById('apiBase');
-  const btn = input.parentElement.querySelector('.eye-btn');
+function togglePasswordLikeVisibility(inputId, triggerBtn = null) {
+  const input = document.getElementById(inputId);
+  const btn = triggerBtn || input?.parentElement?.querySelector('.eye-btn');
+  if (!input || !btn) return;
   if (input.type === 'password') {
     input.type = 'text';
     btn.textContent = '🙈';
   } else {
     input.type = 'password';
     btn.textContent = '👁';
+  }
+}
+
+function updateGzctfStatusUi(status = {}) {
+  const statusEl = document.getElementById('gzctfStatusText');
+  const teamEl = document.getElementById('gzctfTeamText');
+  if (!statusEl) return;
+  const configured = Boolean(status.gzctf_enabled);
+  const hasCookie = Boolean(status.gzctf_has_cookie);
+  const message = String(status.gzctf_status_message || '').trim();
+  const cookieFile = String(status.gzctf_cookie_file || '').trim();
+  const team = status.gzctf_team && typeof status.gzctf_team === 'object' ? status.gzctf_team : null;
+  if (!configured) {
+    statusEl.textContent = '未配置 GZCTF 自动提交通道';
+    if (teamEl) teamEl.textContent = '尚未获取队伍信息';
+    return;
+  }
+  const cookieText = hasCookie ? 'Cookie 已保存' : 'Cookie 未保存';
+  statusEl.textContent = message || `${cookieText}${cookieFile ? ` · ${cookieFile}` : ''}`;
+  if (teamEl) {
+    if (team && team.name) {
+      const parts = [
+        `当前队伍：${team.name}`,
+        team.id ? `ID ${team.id}` : '',
+        team.rank !== null && team.rank !== undefined ? `Rank ${team.rank}` : '',
+        team.score !== null && team.score !== undefined ? `Score ${team.score}` : '',
+      ].filter(Boolean);
+      teamEl.textContent = parts.join(' · ');
+    } else {
+      teamEl.textContent = '尚未获取队伍信息';
+    }
   }
 }
 

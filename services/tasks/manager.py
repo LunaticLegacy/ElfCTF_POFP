@@ -71,6 +71,7 @@ class TaskManager:
             name=str(data.get('name', '')),
             task_type=TaskType(str(data.get('task_type', data.get('type', 'RE'))).upper()),
             target=str(data.get('target', '')),
+            gzctf_challenge_id=str(data.get('gzctfChallengeId', data.get('gzctf_challenge_id', ''))).strip(),
             files=[FileInfo.from_dict(item) for item in data.get('files', []) if isinstance(item, dict)],
             system_prompt=str(data.get('systemPrompt', data.get('system_prompt', ''))),
             skills=list(data.get('skills', [])),
@@ -281,6 +282,7 @@ class TaskManager:
         mapping = {
             'name': 'name',
             'target': 'target',
+            'gzctf_challenge_id': 'gzctf_challenge_id',
             'system_prompt': 'system_prompt',
             'skills': 'skills',
             'selected_mcp': 'selected_mcp',

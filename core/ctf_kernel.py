@@ -21,6 +21,8 @@ from modules.rag.knowledge_base import KnowledgeBase
 from .models import CTFTask, TaskStatus
 from .models import RuntimeConfig
 
+FLAG_PATTERN = re.compile(r"(?i)\b(?:flag|ctf|elfctf)\{[^}\s]{1,200}\}")
+
 
 @dataclass
 class WorkflowResult:
@@ -149,7 +151,8 @@ class CTFWorkflowService:
         task_manager: "TaskManager", 
         *, 
         skills_root: Path | str = 'ctf-skills', 
-        kb_root: Path | str = 'kb'
+        kb_root: Path | str = 'kb',
+        gzctf_service: Any = None,
     ) -> None:
         """Create a workflow service.
 
@@ -161,6 +164,7 @@ class CTFWorkflowService:
         self.task_manager = task_manager    # 任务管理器
         self.skills_root = Path(skills_root)    # skill 目录
         self.kb_root = Path(kb_root)    # 知识库根目录
+        self.gzctf_service = gzctf_service
 
         self._threads: Dict[str, threading.Thread] = {}     # 线程
         self._stop_events: Dict[str, threading.Event] = {}  # 停止事件列表
@@ -373,8 +377,78 @@ class CTFWorkflowService:
             self.task_manager.update_status(task_id, TaskStatus.STOPPED)
             return
 
+        self._maybe_auto_submit_flag(task, runtime_config, result)
         self.task_manager.add_log(task_id, 'Agent workflow 已完成')
         self.task_manager.update_status(task_id, TaskStatus.COMPLETED, result=result)
+
+    def _maybe_auto_submit_flag(self, task: CTFTask, runtime_config: RuntimeConfig, result: str) -> None:
+        """
+        Submit a solved flag to GZCTF when the user configured that workflow.
+        Otherwise, do nothing.
+
+        Args:
+            task: The task to submit the flag for.
+            runtime_config: The runtime configuration for the task.
+            result: The agent workflow result.
+        """
+        if self.gzctf_service is None or not self.gzctf_service.is_configured(runtime_config):
+            return
+        
+        # 获取 flag
+        flag = self._extract_candidate_flag(task, result)
+        if not flag:
+            self.task_manager.add_log(task.id, '未检测到可自动提交的 Flag，跳过 GZCTF 自动提交')
+            return
+
+        self.task_manager.add_log(task.id, '检测到候选 Flag，开始尝试 GZCTF 自动提交')
+        try:
+            # 提交 flag，并获取提交结果
+            # todo: 如果 flag 不正确，则告知系统“这是个错误的 flag”并继续执行。
+            submission = self.gzctf_service.submit_flag_for_task(
+                user_id=task.user_id,
+                config=runtime_config,
+                task_name=task.config.name,
+                task_target=task.config.target,
+                gzctf_challenge_id=task.config.gzctf_challenge_id,
+                flag=flag,
+            )
+            self.task_manager.set_task_artifact(task.id, 'gzctf_submission', submission)
+            if not submission.get('attempted'):
+                reason = submission.get('reason', 'unknown')
+                self.task_manager.add_log(task.id, f'GZCTF 自动提交未执行: {reason}')
+                return
+            verdict = submission.get('verdict', 'unknown')
+            challenge_name = submission.get('challenge_name', task.config.name)
+            self.task_manager.add_log(task.id, f'GZCTF 自动提交完成: {challenge_name} -> {verdict}')
+        except Exception as exc:
+            self.task_manager.set_task_artifact(task.id, 'gzctf_submission', {
+                'attempted': True,
+                'accepted': False,
+                'verdict': 'error',
+                'message': str(exc),
+            })
+            self.task_manager.add_log(task.id, f'GZCTF 自动提交失败: {exc}')
+
+    def _extract_candidate_flag(self, task: CTFTask, result: str) -> str:
+        """
+        Prefer `flag.txt`, then fall back to agent output and logs.
+        
+        Args:
+            task: Task to extract flag from.
+            result: Agent output to extract flag from.
+        """
+        workspace = Path(task.workspace)
+        flag_path = workspace / 'flag.txt'
+        if flag_path.is_file():
+            flag_text = flag_path.read_text(encoding='utf-8', errors='ignore').strip()
+            if flag_text:
+                return flag_text.splitlines()[0].strip()
+
+        for source in (result, '\n'.join(task.logs[-50:])):
+            match = FLAG_PATTERN.search(str(source or ''))
+            if match:
+                return match.group(0)
+        return ''
 
     def _build_agent_context_snapshot(self, agent: Agent) -> Dict[str, Any]:
         """Build a frontend-facing snapshot of the current Agent context state.

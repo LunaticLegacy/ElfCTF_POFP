@@ -120,6 +120,9 @@ async function onSaveConfigClick(triggerBtn) {
   const maxRounds = Number(getInputValue('maxRoundsInput', '50'));
   const maxContextChars = Number(getInputValue('maxContextCharsInput', '14000'));
   const showTerminalOutput = Boolean(document.getElementById('showTerminalOutputToggle')?.checked);
+  const gzctfUsername = getInputValue('gzctfUsername').trim();
+  const gzctfPassword = getInputValue('gzctfPassword');
+  const gzctfGameUrl = getInputValue('gzctfGameUrl').trim();
   const temperature = temperatureRaw.trim() === '' ? null : Number(temperatureRaw);
   const maxTokens = maxTokensRaw.trim() === '' ? null : Number(maxTokensRaw);
 
@@ -156,7 +159,10 @@ async function onSaveConfigClick(triggerBtn) {
       timeout,
       max_rounds: maxRounds,
       max_context_chars: maxContextChars,
-      show_terminal_output: showTerminalOutput
+      show_terminal_output: showTerminalOutput,
+      gzctf_username: gzctfUsername,
+      gzctf_password: gzctfPassword,
+      gzctf_game_url: gzctfGameUrl
     })
   });
   
@@ -173,8 +179,12 @@ async function onSaveConfigClick(triggerBtn) {
       effective_model: result.data?.effective_model || model || currentUserConfigState.effective_model,
       effective_api_base: result.data?.effective_api_base || apiBase || currentUserConfigState.effective_api_base,
       effective_connector_type: result.data?.connector_type || connectorType || 'litellm',
+      gzctf_status_message: result.data?.gzctf_status_message || '',
+      gzctf_has_cookie: Boolean(result.data?.gzctf_has_cookie),
+      gzctf_team: result.data?.gzctf_team || null,
     };
     updateUserContextUi();
+    updateGzctfStatusUi(result.data || {});
     btn.textContent = '✓ 已保存';
     btn.style.background = 'var(--dot)';
     
@@ -191,6 +201,37 @@ async function onSaveConfigClick(triggerBtn) {
   }
 }
 
+async function onFetchGzctfTeamClick(triggerBtn) {
+  if (!ensureAuthenticated()) return;
+  const btn = triggerBtn || event?.target;
+  if (!btn) return;
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '获取中...';
+
+  try {
+    const result = await apiRequest(`${API_BASE}/config/gzctf/team`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    });
+    if (!result.success) {
+      addLog('err', `GZCTF 队伍获取失败: ${result.message}`);
+      return;
+    }
+    currentUserConfigState = {
+      ...currentUserConfigState,
+      gzctf_status_message: result.data?.gzctf_status_message || '',
+      gzctf_has_cookie: Boolean(result.data?.gzctf_has_cookie),
+      gzctf_team: result.data?.gzctf_team || null,
+    };
+    updateGzctfStatusUi(result.data || {});
+    addLog('ok', '已更新 GZCTF 队伍信息');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // 📋 任务卡片管理
 // ═══════════════════════════════════════════════════════════════
@@ -204,6 +245,7 @@ async function onCreateTaskClick() {
   const type = getInputValue('taskType', 'RE');
   const workflowKind = type === 'KNOWLEDGE' ? 'learn' : 'solve';
   const target = getInputValue('taskTarget').trim();
+  const gzctfChallengeId = getInputValue('taskGzctfChallengeId').trim();
   const systemPrompt = getInputValue('taskSystemPrompt').trim();
   const taskMode = getInputValue('taskMode', 'classic');
   const executionMode = getInputValue('taskExecutionMode', 'single');
@@ -226,6 +268,7 @@ async function onCreateTaskClick() {
         type,
         workflowKind,
         target,
+        gzctfChallengeId,
         systemPrompt,
         taskMode,
         executionMode,
@@ -252,6 +295,7 @@ async function onCreateTaskClick() {
       type,
       workflowKind,
       target,
+      gzctfChallengeId,
       files: uploadedTaskFiles,
       systemPrompt,
       taskMode,
@@ -781,6 +825,7 @@ async function onEditTaskClick() {
   const taskId = getInputValue('editTaskId').trim();
   const name = getInputValue('editTaskName').trim();
   const target = getInputValue('editTaskTarget').trim();
+  const gzctfChallengeId = getInputValue('editTaskGzctfChallengeId').trim();
   const taskType = getInputValue('editTaskType', 'RE');
   const workflowKind = taskType === 'KNOWLEDGE' ? 'learn' : 'solve';
   const systemPrompt = getInputValue('editTaskSystemPrompt').trim();
@@ -808,6 +853,7 @@ async function onEditTaskClick() {
       body: JSON.stringify({
         name,
         target,
+        gzctfChallengeId,
         systemPrompt,
         workflowKind,
         taskMode,

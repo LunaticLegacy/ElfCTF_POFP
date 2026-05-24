@@ -59,6 +59,9 @@ class RuntimeConfig:
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
     connector_type: str = 'litellm'
+    gzctf_username: str = ''
+    gzctf_password: str = ''
+    gzctf_game_url: str = ''
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize this config into API-visible fields.
@@ -143,6 +146,7 @@ class CTFTaskConfig:
         name: Human-readable task name.
         task_type: CTF category used for skill routing.
         target: Target URL, host, local challenge description, or remote address.
+        gzctf_challenge_id: Explicit GZCTF challenge id used for auto-submit.
         files: Attached challenge file metadata.
         system_prompt: Optional user-provided prompt supplement.
         skills: Explicit CTF skill ids selected by the user.
@@ -162,6 +166,7 @@ class CTFTaskConfig:
     name: str
     task_type: TaskType
     target: str = ''
+    gzctf_challenge_id: str = ''
     files: List[FileInfo] = field(default_factory=list)
     system_prompt: str = ''
     skills: List[str] = field(default_factory=list)
@@ -264,6 +269,7 @@ class CTFTask:
             'type': config.task_type.value,
             'task_type': config.task_type.value,
             'target': config.target,
+            'gzctfChallengeId': config.gzctf_challenge_id,
             'files': [file_info.to_dict() for file_info in config.files],
             'systemPrompt': config.system_prompt,
             'skills': list(config.skills),

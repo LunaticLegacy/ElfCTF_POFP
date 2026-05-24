@@ -17,13 +17,20 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       effective_model: '',
       effective_api_base: '',
       effective_connector_type: 'litellm',
+      gzctf_status_message: '',
+      gzctf_has_cookie: false,
+      gzctf_team: null,
     };
     setInputValue('apiKey', '');
     setInputValue('apiBase', '');
+    setInputValue('gzctfUsername', '');
+    setInputValue('gzctfPassword', '');
+    setInputValue('gzctfGameUrl', '');
     const showTerminalToggle = document.getElementById('showTerminalOutputToggle');
     if (showTerminalToggle) {
       showTerminalToggle.checked = true;
     }
+    updateGzctfStatusUi({});
     updateUserContextUi();
     if (forceRefreshTasks) {
       renderTasks([]);
@@ -42,9 +49,15 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
         effective_model: result.data.effective_model || '',
         effective_api_base: result.data.effective_api_base || '',
         effective_connector_type: result.data.connector_type || 'litellm',
+        gzctf_status_message: result.data.gzctf_status_message || '',
+        gzctf_has_cookie: Boolean(result.data.gzctf_has_cookie),
+        gzctf_team: result.data.gzctf_team || null,
       };
       setInputValue('apiKey', result.data.api_key || '');
       setInputValue('apiBase', result.data.api_base || '');
+      setInputValue('gzctfUsername', result.data.gzctf_username || '');
+      setInputValue('gzctfPassword', result.data.gzctf_password || '');
+      setInputValue('gzctfGameUrl', result.data.gzctf_game_url || '');
       
       // 设置连接器类型
       const connectorType = result.data.connector_type || 'litellm';
@@ -63,6 +76,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       if (showTerminalToggle) {
         showTerminalToggle.checked = result.data.show_terminal_output !== false;
       }
+      updateGzctfStatusUi(result.data);
       updateUserContextUi();
 
       // Refresh the model selector only when a usable API config exists for the current user.
@@ -89,8 +103,12 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       effective_model: '',
       effective_api_base: '',
       effective_connector_type: 'litellm',
+      gzctf_status_message: '',
+      gzctf_has_cookie: false,
+      gzctf_team: null,
     };
     updateUserContextUi();
+    updateGzctfStatusUi({});
     addLog('warn', '⚙️ 无法连接后端，使用本地缓存');
     const savedKey = localStorage.getItem(getUserStorageKey('ctf_api_key'));
     const savedBase = localStorage.getItem(getUserStorageKey('ctf_api_base'));
@@ -98,6 +116,9 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     const savedShowTerminalOutput = localStorage.getItem(getUserStorageKey('ctf_show_terminal_output'));
     setInputValue('apiKey', savedKey || '');
     setInputValue('apiBase', savedBase || '');
+    setInputValue('gzctfUsername', '');
+    setInputValue('gzctfPassword', '');
+    setInputValue('gzctfGameUrl', '');
     if (savedConnector) {
       const connectorSelect = document.getElementById('connectorType');
       if (connectorSelect) {

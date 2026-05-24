@@ -501,6 +501,7 @@ async def update_task(request: Request, task_id: str) -> JSONResponse:
         task_id=task_id,
         name=update_request.name,
         target=update_request.target,
+        gzctf_challenge_id=update_request.gzctf_challenge_id,
         system_prompt=update_request.system_prompt,
         skills=update_request.skills,
         selected_mcp=update_request.selected_mcp,

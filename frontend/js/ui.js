@@ -86,6 +86,7 @@ function closeModal() {
   
   setInputValue('taskName', '');
   setInputValue('taskTarget', '');
+  setInputValue('taskGzctfChallengeId', '');
   setInputValue('taskSystemPrompt', '');
   setInputValue('taskMode', 'classic');
   setInputValue('taskExecutionMode', 'single');
@@ -629,6 +630,7 @@ async function openEditTaskModal(taskId) {
   setInputValue('editTaskName', task.name || '');
   setInputValue('editTaskType', task.type || 'RE');
   setInputValue('editTaskTarget', task.target || '');
+  setInputValue('editTaskGzctfChallengeId', task.gzctfChallengeId || '');
   setInputValue('editTaskSystemPrompt', task.systemPrompt || '');
   setInputValue('editTaskMode', task.taskMode || 'classic');
   setInputValue('editTaskExecutionMode', task.executionMode || 'single');
@@ -669,14 +671,16 @@ async function openEditTaskModal(taskId) {
 
   // 显示文件列表
   const filesContainer = document.getElementById('editTaskFiles');
-  if (task.files && task.files.length > 0) {
-    filesContainer.innerHTML = task.files.map(f => `
-      <div style="padding:4px 0;font-size:12px;">
-        📄 ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)
-      </div>
-    `).join('');
-  } else {
-    filesContainer.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">无文件</span>';
+  if (filesContainer) {
+    if (task.files && task.files.length > 0) {
+      filesContainer.innerHTML = task.files.map(f => `
+        <div style="padding:4px 0;font-size:12px;">
+          📄 ${escapeHtml(f.name)} (${(f.size / 1024).toFixed(1)} KB)
+        </div>
+      `).join('');
+    } else {
+      filesContainer.innerHTML = '<span style="color:var(--text-muted);font-size:12px;">无文件</span>';
+    }
   }
 
   document.getElementById('editTaskModalBg').classList.add('show');
@@ -689,6 +693,7 @@ function closeEditTaskModal(event) {
   if (!event || event.target === document.getElementById('editTaskModalBg')) {
     document.getElementById('editTaskModalBg').classList.remove('show');
     currentEditingTaskId = null;
+    setInputValue('editTaskGzctfChallengeId', '');
   }
 }
 

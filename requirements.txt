@@ -9,7 +9,7 @@ litellm==1.82.6
 
 # Provide API to Frontend
 fastapi
-# uvicorn
+uvicorn
 
 # postgresql support
 asyncpg
@@ -23,5 +23,5 @@ mcp>=1.10.0
 
 # else
 r2pipe==1.9.8
-
-
+cryptography
+requests
