@@ -37,6 +37,7 @@ class CreateTaskResult:
 class TaskManager:
     """Create, persist, update, and query CTF tasks.
     该类需要保证全局单例。
+    TODO: 考虑将每一个任务实例都用一个 agent 实例。
     """
 
     def __init__(self, tasks_dir: Path | str) -> None:

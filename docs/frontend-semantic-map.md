@@ -347,6 +347,18 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Notes: The visible `Agent Verbose` section is derived from `task.logs` via `splitEngineeringLogs()`; the frontend does not receive a separate backend verbose stream.
 - Notes: After the backend now mirrors agent stdout/stderr into task logs, this section can show actual live agent trace lines on the next polling refresh.
 
+#### `tasks.syncLogEntries`
+
+- Signature: `syncLogEntries(container, newLogs, emptyText = '暂无日志')`
+- Parameters:
+  - `container`: Log list DOM container inside the task detail or log-panel modal.
+  - `newLogs`: Latest tool or verbose log array derived from the task snapshot.
+  - `emptyText`: Empty-state label rendered when no logs remain.
+- Returns: None.
+- Side effects: Mutates the container DOM to append new entries, replace stale entries after retry/reset shrinkage, or render the empty state when logs are cleared.
+- Calls: `escapeHtml`, `document.createElement`.
+- Called by: `updateProgressPage`, `refreshOpenLogPanelModal`.
+
 #### `tasks.normalizeTaskProgressValue`
 
 - Signature: `normalizeTaskProgressValue(value)`

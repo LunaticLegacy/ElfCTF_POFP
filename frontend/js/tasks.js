@@ -508,40 +508,20 @@ function refreshOpenLogPanelModal(tasks) {
                activeLogPanelType === 'verbose' ? detailData.verboseLogs : null;
   
   if (logs) {
-    // 获取当前已显示的日志条目
-    const existingEntries = scrollContainer.querySelectorAll('.task-log-entry:not(.task-log-entry-empty)');
-    const existingCount = existingEntries.length;
-    
-    // 如果有新日志，追加它们
-    if (logs.length > existingCount) {
-      // 如果之前显示的是"暂无日志"，清空容器
-      if (existingEntries.length === 0 && scrollContainer.querySelector('.task-log-entry-empty')) {
-        scrollContainer.innerHTML = '';
-      }
-      
-      // 追加新日志条目
-      const newLogs = logs.slice(existingCount);
-      const fragment = document.createDocumentFragment();
-      newLogs.forEach(log => {
-        const entry = document.createElement('div');
-        entry.className = 'task-log-entry';
-        entry.textContent = log;
-        fragment.appendChild(entry);
-      });
-      scrollContainer.appendChild(fragment);
-      
-      // 更新标题计数
-      const titleEl = document.getElementById('logPanelTitle');
-      if (titleEl) {
-        const titles = {
-          'tool': '🧰 工具块',
-          'verbose': '🛰 Agent Verbose',
-          'llm': '🤖 LLM 输出块'
-        };
-        titleEl.textContent = titles[activeLogPanelType] || activeLogPanelType;
-      }
+    const emptyText = activeLogPanelType === 'tool'
+      ? '暂无工具日志'
+      : '暂无 Agent verbose 日志';
+    syncLogEntries(scrollContainer, logs, emptyText);
+
+    const titleEl = document.getElementById('logPanelTitle');
+    if (titleEl) {
+      const titles = {
+        'tool': '🧰 工具块',
+        'verbose': '🛰 Agent Verbose',
+        'llm': '🤖 LLM 输出块'
+      };
+      titleEl.textContent = titles[activeLogPanelType] || activeLogPanelType;
     }
-    // 如果日志数量相同，不做任何更新（保留滚动位置和选择状态）
   } else if (activeLogPanelType === 'llm') {
     // LLM 输出需要特殊处理，因为可能有分页
     const newHtml = renderLogPanelContent(detailData, activeLogPanelType);
@@ -557,17 +537,35 @@ function refreshOpenLogPanelModal(tasks) {
   }
 }
 
-function appendLogEntries(container, newLogs) {
+function syncLogEntries(container, newLogs, emptyText = '暂无日志') {
   if (!container) return;
   const existingEntries = container.querySelectorAll('.task-log-entry:not(.task-log-entry-empty)');
   const existingCount = existingEntries.length;
+  const normalizedLogs = Array.isArray(newLogs) ? newLogs : [];
 
-  if (newLogs.length > existingCount) {
+  // When logs shrink after a retry/reset, rebuild the list so stale entries disappear.
+  if (normalizedLogs.length < existingCount) {
+    if (!normalizedLogs.length) {
+      container.innerHTML = `<div class="task-log-entry task-log-entry-empty">${escapeHtml(emptyText)}</div>`;
+      return;
+    }
+    container.innerHTML = normalizedLogs.map(log => `<div class="task-log-entry">${escapeHtml(log)}</div>`).join('');
+    return;
+  }
+
+  if (!normalizedLogs.length) {
+    if (existingCount !== 0 || !container.querySelector('.task-log-entry-empty')) {
+      container.innerHTML = `<div class="task-log-entry task-log-entry-empty">${escapeHtml(emptyText)}</div>`;
+    }
+    return;
+  }
+
+  if (normalizedLogs.length > existingCount) {
     if (existingCount === 0 && container.querySelector('.task-log-entry-empty')) {
       container.innerHTML = '';
     }
     const fragment = document.createDocumentFragment();
-    newLogs.slice(existingCount).forEach(log => {
+    normalizedLogs.slice(existingCount).forEach(log => {
       const entry = document.createElement('div');
       entry.className = 'task-log-entry';
       entry.textContent = log;
@@ -649,12 +647,12 @@ function updateProgressPage(container, task, detailData) {
     const toolCount = logPanels[0].querySelector('.task-progress-log-panel-count');
     const toolBody = logPanels[0].querySelector('.task-progress-log-panel-body');
     if (toolCount) toolCount.textContent = `${toolLogs.length} 条`;
-    appendLogEntries(toolBody, toolLogs);
+    syncLogEntries(toolBody, toolLogs, '暂无工具日志');
 
     const verbCount = logPanels[1].querySelector('.task-progress-log-panel-count');
     const verbBody = logPanels[1].querySelector('.task-progress-log-panel-body');
     if (verbCount) verbCount.textContent = `${verboseLogs.length} 条`;
-    appendLogEntries(verbBody, verboseLogs);
+    syncLogEntries(verbBody, verboseLogs, '暂无 Agent verbose 日志');
 
     // 同步更新标题栏的点击事件绑定，防止极端情况下的串台
     const toolHeader = logPanels[0].querySelector('.task-progress-log-panel-header');
@@ -2263,6 +2261,8 @@ function normalizeTaskContextSnapshot(rawValue) {
         .filter(item => item && typeof item === 'object')
         .map(item => ({
           id: Number(item.id ?? 0),
+          timeline: Number(item.timeline ?? item.id ?? 0),
+          active: Boolean(item.active),
           role: String(item.role || '').trim(),
           content: String(item.content || '').trim(),
           toolCallInfo: Array.isArray(item.tool_call_info) ? item.tool_call_info.map(entry => String(entry || '').trim()).filter(Boolean) : [],
@@ -2277,8 +2277,11 @@ function normalizeTaskContextSnapshot(rawValue) {
         .filter(item => item && typeof item === 'object')
         .map(item => ({
           id: Number(item.id ?? 0),
+          timeline: Number(item.timeline ?? item.id ?? 0),
+          active: Boolean(item.active),
           abstractMsg: String(item.abstract_msg || '').trim(),
-          sourceIds: Array.isArray(item.source_ids) ? item.source_ids.map(entry => Number(entry ?? 0)).filter(Number.isFinite) : [],
+          sourceCount: Number(item.source_count ?? 0),
+          sourceTimeline: Array.isArray(item.source_timeline) ? item.source_timeline.map(entry => Number(entry ?? 0)).filter(Number.isFinite) : [],
           tags: Array.isArray(item.tags) ? item.tags.map(entry => String(entry || '').trim()).filter(Boolean) : [],
         }))
     : [];
@@ -2362,6 +2365,7 @@ function renderTaskContextEntry(entry, kind) {
           <div class="task-context-card-title">#${escapeHtml(String(entry.id))} · ${escapeHtml(entry.role || 'unknown')}</div>
           <div class="task-context-chip">${escapeHtml((entry.tags || []).join(' · ') || '无标签')}</div>
         </div>
+        <div class="task-context-card-meta">timeline: ${escapeHtml(String(entry.timeline ?? entry.id ?? '无'))} · ${entry.active ? 'active' : 'inactive'}</div>
         <pre class="task-thinking-code">${escapeHtml(entry.content || '空内容')}</pre>
         ${toolInfoHtml}
         ${toolResultHtml}
@@ -2377,7 +2381,9 @@ function renderTaskContextEntry(entry, kind) {
           <div class="task-context-card-title">#${escapeHtml(String(entry.id))} · 压缩摘要</div>
           <div class="task-context-chip">${escapeHtml((entry.tags || []).join(' · ') || '无标签')}</div>
         </div>
-        <div class="task-context-card-meta">source_ids: ${escapeHtml((entry.sourceIds || []).join(', ') || '无')}</div>
+        <div class="task-context-card-meta">timeline: ${escapeHtml(String(entry.timeline ?? entry.id ?? '无'))} · ${entry.active ? 'active' : 'inactive'}</div>
+        <div class="task-context-card-meta">source_count: ${escapeHtml(String(entry.sourceCount ?? 0))}</div>
+        <div class="task-context-card-meta">source_timeline: ${escapeHtml((entry.sourceTimeline || []).join(', ') || '无')}</div>
         <pre class="task-thinking-code">${escapeHtml(entry.abstractMsg || '空摘要')}</pre>
       </div>
     `;

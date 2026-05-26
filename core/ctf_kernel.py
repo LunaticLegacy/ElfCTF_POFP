@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import re
 import sys
 import threading
@@ -15,13 +14,137 @@ from typing import Any, Dict, Optional, Literal
 from core.json_types import JsonObject
 from modules.llmfetcher import Agent, LLMFetcher, create_ctf_tools, create_obscura_tools, create_shell_tools
 from modules.llmfetcher.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
+from modules.llmfetcher.llm_context import LLMContext, LLMContextCompacted
+from modules.llmfetcher.llm_types import LLMBackendConfig
 from modules.llmfetcher.tools.ctf_tools import create_knowledge_tools
 from modules.rag.knowledge_base import KnowledgeBase
 
 from .models import CTFTask, TaskStatus
 from .models import RuntimeConfig
+from .ctf_prompt import build_ctf_compression_profile
 
 FLAG_PATTERN = re.compile(r"(?i)\b(?:flag|ctf|elfctf)\{[^}\s]{1,200}\}")
+
+
+class _ThreadLocalStreamRouter:
+    """Route writes to a thread-registered stream when one is active.
+
+    Writes from threads without an active registration fall back to the
+    original process stream so unrelated output continues to work normally.
+    """
+
+    def __init__(self, fallback_stream) -> None:
+        self._fallback_stream = fallback_stream
+        self._lock = threading.RLock()
+        self._writers: dict[int, list[object]] = {}
+
+    def register(self, writer) -> None:
+        """Push one thread-local writer for the current thread."""
+        thread_id = threading.get_ident()
+        with self._lock:
+            stack = self._writers.setdefault(thread_id, [])
+            stack.append(writer)
+
+    def unregister(self) -> None:
+        """Pop the current thread-local writer if one exists."""
+        thread_id = threading.get_ident()
+        with self._lock:
+            stack = self._writers.get(thread_id)
+            if not stack:
+                return
+            stack.pop()
+            if not stack:
+                self._writers.pop(thread_id, None)
+
+    def _current_stream(self):
+        thread_id = threading.get_ident()
+        with self._lock:
+            stack = self._writers.get(thread_id)
+            if stack:
+                return stack[-1]
+        return self._fallback_stream
+
+    def write(self, text: str) -> int:
+        return self._current_stream().write(text)
+
+    def flush(self) -> None:
+        self._current_stream().flush()
+
+    def isatty(self) -> bool:
+        return bool(getattr(self._current_stream(), 'isatty', lambda: False)())
+
+    def writable(self) -> bool:
+        return bool(getattr(self._current_stream(), 'writable', lambda: True)())
+
+    @property
+    def encoding(self):
+        return getattr(self._fallback_stream, 'encoding', None)
+
+    @property
+    def errors(self):
+        return getattr(self._fallback_stream, 'errors', None)
+
+    def fileno(self) -> int:
+        return self._fallback_stream.fileno()
+
+    def __getattr__(self, name: str):
+        return getattr(self._fallback_stream, name)
+
+
+class _ThreadScopedStdIORedirect:
+    """Install one global stdout/stderr router and bind it per thread."""
+
+    _lock = threading.RLock()
+    _active_contexts = 0
+    _stdout_router: _ThreadLocalStreamRouter | None = None
+    _stderr_router: _ThreadLocalStreamRouter | None = None
+    _original_stdout = None
+    _original_stderr = None
+
+    def __init__(self, stdout_writer, stderr_writer=None) -> None:
+        self.stdout_writer = stdout_writer
+        self.stderr_writer = stderr_writer or stdout_writer
+
+    @classmethod
+    def _ensure_installed(cls) -> None:
+        if cls._active_contexts == 0:
+            cls._original_stdout = sys.stdout
+            cls._original_stderr = sys.stderr
+            cls._stdout_router = _ThreadLocalStreamRouter(cls._original_stdout)
+            cls._stderr_router = _ThreadLocalStreamRouter(cls._original_stderr)
+            sys.stdout = cls._stdout_router
+            sys.stderr = cls._stderr_router
+        cls._active_contexts += 1
+
+    @classmethod
+    def _maybe_restore(cls) -> None:
+        cls._active_contexts = max(0, cls._active_contexts - 1)
+        if cls._active_contexts == 0:
+            if cls._original_stdout is not None:
+                sys.stdout = cls._original_stdout
+            if cls._original_stderr is not None:
+                sys.stderr = cls._original_stderr
+            cls._stdout_router = None
+            cls._stderr_router = None
+            cls._original_stdout = None
+            cls._original_stderr = None
+
+    def __enter__(self):
+        with self._lock:
+            self._ensure_installed()
+            assert self._stdout_router is not None
+            assert self._stderr_router is not None
+            self._stdout_router.register(self.stdout_writer)
+            self._stderr_router.register(self.stderr_writer)
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        with self._lock:
+            if self._stdout_router is not None:
+                self._stdout_router.unregister()
+            if self._stderr_router is not None:
+                self._stderr_router.unregister()
+            self._maybe_restore()
 
 
 @dataclass
@@ -321,19 +444,30 @@ class CTFWorkflowService:
         )
 
         # 拉取模型使用的。
-        fetcher = LLMFetcher(
+        # todo: 当前的 kernel 语义不正确，创建 fetcher 和 agent 的时间点需要在创建任务时，而非执行任务时。
+        fetcher_config = LLMBackendConfig(
+            name="default",
             api_url=runtime_config.api_base or None,
             api_key=runtime_config.api_key,
             model=runtime_config.model,
             provider=provider,
             timeout=runtime_config.timeout,
         )
+        fetcher = LLMFetcher(
+            backends=[fetcher_config]
+        )
+
+        # 根据当前任务类型构造上下文压缩 profile，使自动归档出的摘要
+        # 能够携带与题型匹配的结构化提炼规则。
+        compression_profile = build_ctf_compression_profile(task.config.task_type.value)
+
         agent = Agent(
             llm_handler=fetcher,
             system_prompt=system_prompt,
             tools=tools,
             provider=tool_provider,
             max_concurrent_tools=4,
+            compression_profile=compression_profile,
         )
         prompt = self._user_prompt(task, mode)
 
@@ -354,7 +488,7 @@ class CTFWorkflowService:
 
         # Execute the agent while always capturing verbose output into task logs.
         verbose_writer = _TaskVerboseLogWriter(task_id, self.task_manager, mirror_stream=mirror_stream)
-        with contextlib.redirect_stdout(verbose_writer), contextlib.redirect_stderr(verbose_writer):
+        with _ThreadScopedStdIORedirect(verbose_writer):
             # 这里是模型的主线，在该函数内执行 agent 执行轮。
             # 注意：runtime_configure.temperature 可能没有从前端被正确传入。
             result = await agent.run_agent_round(
@@ -385,6 +519,7 @@ class CTFWorkflowService:
         """
         Submit a solved flag to GZCTF when the user configured that workflow.
         Otherwise, do nothing.
+        这个 flag 提交器的语义正确，是我需要的。
 
         Args:
             task: The task to submit the flag for.
@@ -462,36 +597,39 @@ class CTFWorkflowService:
         # Read the live context manager once so all derived sections share the same snapshot moment.
         context_handler = agent.context_manager
 
-        # Serialize uncompacted entries with stable ids, roles, previews, and tool metadata.
+        # Split the unified timeline store into raw and compacted sections for frontend rendering.
         uncompacted_entries = []
-        for context_id, entry in sorted(context_handler.context_dict_uncompacted.items()):
-            uncompacted_entries.append({
-                'id': context_id,
-                'role': entry.role,
-                'content': entry.content,
-                'tool_call_info': list(entry.tool_call_info or []),
-                'tool_call_result': list(entry.tool_call_result or []),
-                'tags': list(entry.tags or []),
-            })
-
-        # Serialize compacted entries with their source links and abstract summaries.
         compacted_entries = []
-        compacted_items = []
-        for _, entry in context_handler.context_dict_compacted.items():
-            context_id = context_handler.context_raw_dict_reversed.get(id(entry))
-            compacted_items.append((context_id if context_id is not None else -1, entry))
-        for context_id, entry in sorted(compacted_items, key=lambda item: item[0]):
-            compacted_entries.append({
-                'id': context_id,
-                'abstract_msg': entry.abstract_msg,
-                'source_ids': list(entry.source_ids),
-                'tags': list(entry.tags or []),
-            })
+        active_ids = set(context_handler.get_active_ids_window())
+        for context_id, entry in sorted(context_handler.context_timeline_dict.items()):
+            if isinstance(entry, LLMContext):
+                uncompacted_entries.append({
+                    'id': context_id,
+                    'timeline': entry.timeline,
+                    'active': context_id in active_ids,
+                    'role': entry.role,
+                    'content': entry.content,
+                    'tool_call_info': list(entry.tool_call_info or []),
+                    'tags': list(entry.tags or []),
+                })
+                continue
 
-        # Copy persistent memory summaries so the task snapshot stays detached from the Agent object.
+            if isinstance(entry, LLMContextCompacted):
+                compacted_entries.append({
+                    'id': context_id,
+                    'timeline': entry.timeline,
+                    'active': context_id in active_ids,
+                    'abstract_msg': entry.abstract_msg,
+                    'source_timeline': list(entry.source_timeline),
+                    'source_count': len(entry.source),
+                    'tags': list(entry.tags or []),
+                })
+
+        # Copy persistent memory summaries from the context handler so the snapshot is detached.
+        memories = context_handler.copy_memories() or []
         memory_entries = [
             {'id': index, 'content': memory}
-            for index, memory in enumerate(agent.copy_memories())
+            for index, memory in enumerate(memories)
         ]
 
         # Return both raw sections and small counters so the frontend can render summary chips.
@@ -515,6 +653,7 @@ Work only inside this task workspace: {workspace}
 Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
 Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
 When you find a flag, save it to flag.txt, and then summarize how to proceed at proceed.md. Then reply "Finish." without tool call to finish.
+You can find some useful informmation in the archived context by fetching the original context by abstracts and tags.
 
 Task name: {task.config.name}
 Task type: {task.config.task_type.value}
@@ -525,6 +664,8 @@ User prompt supplement:
 
     def _user_prompt(self, task: CTFTask, mode: str) -> str:
         """Build the user prompt sent to the agent for this workflow run."""
+        if mode == "retry":
+            mode = "start"
         file_lines = '\n'.join(f'- {file_info.name}: {file_info.path}' for file_info in task.config.files) or '- no files attached'
         extra = f'\nAdditional user input:\n{task.pending_new_input}' if task.pending_new_input else ''
         return f"""Mode: {mode}
