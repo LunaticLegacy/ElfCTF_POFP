@@ -32,6 +32,8 @@
 | `tasks.renderTasks` | function | `frontend/js/tasks.js` | Renders the task grid from sorted task data. |
 | `tasks.renderTaskCardSummaryBlocks` | function | `frontend/js/tasks.js` | Renders compact block summaries inside task-list cards. |
 | `tasks.renderTaskDetailModalForTask` | function | `frontend/js/tasks.js` | Renders the detail modal for one task while preserving useful local state. |
+| `tasks.normalizeTaskAgentStatus` | function | `frontend/js/tasks.js` | Normalizes backend `artifacts.agent_status` into AgentState, context, persistence, and metric data for the task detail modal. |
+| `tasks.renderTaskAgentStateSection` | function | `frontend/js/tasks.js` | Renders the Agent State panel inside the task detail modal. |
 | `tasks.normalizeTaskProgressValue` | function | `frontend/js/tasks.js` | Normalizes backend progress values for safe percentage display. |
 | `tasks.formatTaskFilesLabel` | function | `frontend/js/tasks.js` | Builds de-duplicated file labels for task detail surfaces. |
 | `tasks.formatTaskSkillsHtml` | function | `frontend/js/tasks.js` | Builds sanitized skill chips or the default skill label. |
@@ -184,6 +186,27 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Side effects: None.
 - Calls: `Date`, `toLocaleString`.
 - Called by: task list cards, task detail metadata, knowledge/cockpit time labels, and feedback timestamps.
+
+#### `tasks.normalizeTaskAgentStatus`
+
+- Signature: `normalizeTaskAgentStatus(rawValue, fallbackContext)`
+- Parameters:
+  - `rawValue`: Backend `artifacts.agent_status` payload.
+  - `fallbackContext`: Legacy `artifacts.context_snapshot` used when the new status payload is absent.
+- Returns: Normalized Agent status object containing `state`, `context`, active ids, context length, tool count, persistence path, and timestamps.
+- Side effects: None.
+- Calls: `normalizeTaskContextSnapshot`.
+- Called by: `buildTaskDetailData`.
+
+#### `tasks.renderTaskAgentStateSection`
+
+- Signature: `renderTaskAgentStateSection(agentStatus)`
+- Parameters:
+  - `agentStatus`: Normalized status from `normalizeTaskAgentStatus`.
+- Returns: HTML for the Agent State section, including facts, hypotheses, next actions, failed actions, do-not-repeat entries, known routes, artifacts, and persistence metadata.
+- Side effects: None.
+- Calls: `escapeHtml`, `formatDateTime`.
+- Called by: `renderTaskDetailModal`.
 
 ### `frontend/js/ui.js`
 

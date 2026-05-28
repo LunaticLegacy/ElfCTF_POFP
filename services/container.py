@@ -14,8 +14,8 @@ from .skill_service import SkillService
 from .storage import ApplicationStorage
 from .tasks.manager import TaskManager
 from .tools.bootstrap import ToolBootstrapService
+from .tools.hotplug import hotplug_manager
 from .gzctf_service import GZCTFService
-from core.ctf_kernel import CTFWorkflowService
 
 
 @dataclass
@@ -47,9 +47,11 @@ def create_services(data_dir: Path | str = '.elfctf') -> ApplicationServices:
     """
     # Build storage first so every service shares the same durable root.
     storage = ApplicationStorage(data_dir)
+    hotplug_manager.configure_storage_dir(storage.get_data_dir() / 'hotplug-tools')
     task_manager = TaskManager(storage.get_tasks_dir())
     config_handler = ConfigHandler(storage)
     gzctf_service = GZCTFService(storage.get_data_dir())
+    from core.ctf_kernel import CTFWorkflowService
     return ApplicationServices(
         storage=storage,
         auth=AuthService(storage.get_database_path()),

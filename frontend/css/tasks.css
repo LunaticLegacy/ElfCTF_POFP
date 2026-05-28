@@ -240,6 +240,60 @@
   background: var(--primary);
 }
 
+.task-agent-fact-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-agent-fact-item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.task-agent-fact-index {
+  padding-top: 1px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-agent-fact-text {
+  min-width: 0;
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.task-agent-chip-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.task-agent-state-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  max-width: 100%;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.3;
+  word-break: break-word;
+}
+
 .task-detail-page,
 .task-detail-page-compact {
   display: flex;

@@ -249,9 +249,11 @@ async function onCreateTaskClick() {
   const systemPrompt = getInputValue('taskSystemPrompt').trim();
   const taskMode = getInputValue('taskMode', 'classic');
   const executionMode = getInputValue('taskExecutionMode', 'single');
+  const contextMode = getInputValue('taskContextMode', 'linear');
   const learningConfig = getLearningConfig('task');
   const swarmSubagentConfig = getSwarmSubagentConfig('task');
   const skills = getSelectedSkills('taskSkills');
+  const externalToolNames = getSelectedValues('taskExternalTools');
   const submitBtn = document.getElementById('createTaskSubmitBtn');
   const originalButtonText = submitBtn?.textContent || '创建任务';
 
@@ -272,10 +274,12 @@ async function onCreateTaskClick() {
         systemPrompt,
         taskMode,
         executionMode,
+        contextMode,
         learningConfig,
         swarmSubagentConfig,
         files: uploadedTaskFiles,
         skills,
+        externalToolNames,
       });
 
       if (result.createdCount > 0) {
@@ -300,6 +304,7 @@ async function onCreateTaskClick() {
       systemPrompt,
       taskMode,
       executionMode,
+      contextMode,
       learningMode: learningConfig.mode,
       learningSearchRounds: learningConfig.searchRounds,
       learningResultsPerQuery: learningConfig.resultsPerQuery,
@@ -312,6 +317,7 @@ async function onCreateTaskClick() {
       swarmSubagentCountMax: swarmSubagentConfig.max,
       swarmSubagentCountSuggested: swarmSubagentConfig.suggested,
       skills,
+      externalToolNames,
     });
 
     if (result.success) {
@@ -604,7 +610,7 @@ function refreshBatchTaskPlanner() {
   }).join('');
 }
 
-async function createTasksInBatch({ namePrefix, type, workflowKind, target, systemPrompt, taskMode, executionMode, learningConfig, swarmSubagentConfig, files, skills, selectedMcp }) {
+async function createTasksInBatch({ namePrefix, type, workflowKind, target, systemPrompt, taskMode, executionMode, contextMode, learningConfig, swarmSubagentConfig, files, skills, selectedMcp, externalToolNames }) {
   const batchText = getInputValue('batchTaskInput');
   const definitions = parseBatchTaskDefinitions(batchText, namePrefix, target);
 
@@ -625,6 +631,7 @@ async function createTasksInBatch({ namePrefix, type, workflowKind, target, syst
       systemPrompt,
       taskMode,
       executionMode,
+      contextMode,
       learningMode: learningConfig?.mode,
       learningSearchRounds: learningConfig?.searchRounds,
       learningResultsPerQuery: learningConfig?.resultsPerQuery,
@@ -634,6 +641,7 @@ async function createTasksInBatch({ namePrefix, type, workflowKind, target, syst
       learningExcludeKeywords: learningConfig?.excludeKeywords,
       skills,
       selectedMcp,
+      externalToolNames,
       swarmSubagentAutoCount: Boolean(swarmSubagentConfig?.autoCount),
       swarmSubagentCountMin: Number(swarmSubagentConfig?.min),
       swarmSubagentCountMax: Number(swarmSubagentConfig?.max),

@@ -16,9 +16,11 @@ from core.models import (
     CTFTaskConfig,
     FileInfo,
     TaskType,
+    normalize_context_mode,
     normalize_learning_keywords,
     normalize_learning_limits,
     normalize_learning_mode,
+    normalize_tool_names,
     normalize_workflow_kind,
 )
 from services.tasks.manager import UploadedTaskFile
@@ -544,6 +546,7 @@ class CreateTaskRequest:
         workflow_kind: Normalized workflow kind.
         task_mode: Task interaction mode.
         execution_mode: Execution fan-out mode.
+        context_mode: Immutable context assembly mode.
         learning_mode: Knowledge learning mode.
         learning_search_rounds: Search round budget.
         learning_results_per_query: Search result budget per query.
@@ -551,6 +554,7 @@ class CreateTaskRequest:
         learning_max_chars_per_source: Character budget per source.
         learning_focus_keywords: Keywords to emphasize during learning.
         learning_exclude_keywords: Keywords to exclude during learning.
+        external_tool_names: Selected hotplug tool names for this task.
     """
 
     name: str = ''
@@ -564,6 +568,7 @@ class CreateTaskRequest:
     workflow_kind: str = 'solve'
     task_mode: str = 'classic'
     execution_mode: str = 'single'
+    context_mode: str = 'linear'
     learning_mode: str = DEFAULT_LEARNING_MODE
     learning_search_rounds: int = DEFAULT_LEARNING_SEARCH_ROUNDS
     learning_results_per_query: int = DEFAULT_LEARNING_RESULTS_PER_QUERY
@@ -571,6 +576,7 @@ class CreateTaskRequest:
     learning_max_chars_per_source: int = DEFAULT_LEARNING_MAX_CHARS_PER_SOURCE
     learning_focus_keywords: List[str] = None
     learning_exclude_keywords: List[str] = None
+    external_tool_names: List[str] = None
 
     @classmethod
     def from_payload(cls, data: Optional[Dict[str, Any]]) -> 'CreateTaskRequest':
@@ -608,6 +614,9 @@ class CreateTaskRequest:
             ),
             task_mode=str(payload.get('taskMode', 'classic') or 'classic'),
             execution_mode=str(payload.get('executionMode', 'single') or 'single'),
+            context_mode=normalize_context_mode(
+                payload.get('contextMode', payload.get('context_mode', 'linear')),
+            ),
             learning_mode=normalize_learning_mode(
                 payload.get('learningMode', payload.get('learning_mode', DEFAULT_LEARNING_MODE)),
                 payload.get('workflowKind', payload.get('workflow_kind', '')),
@@ -621,6 +630,9 @@ class CreateTaskRequest:
             ),
             learning_exclude_keywords=normalize_learning_keywords(
                 payload.get('learningExcludeKeywords', payload.get('learning_exclude_keywords', [])),
+            ),
+            external_tool_names=normalize_tool_names(
+                payload.get('externalToolNames', payload.get('external_tool_names', [])),
             ),
         )
 
@@ -647,6 +659,7 @@ class CreateTaskRequest:
             workflow_kind=self.workflow_kind,
             task_mode=self.task_mode,
             execution_mode=self.execution_mode,
+            context_mode=self.context_mode,
             learning_mode=self.learning_mode,
             learning_search_rounds=self.learning_search_rounds,
             learning_results_per_query=self.learning_results_per_query,
@@ -654,6 +667,7 @@ class CreateTaskRequest:
             learning_max_chars_per_source=self.learning_max_chars_per_source,
             learning_focus_keywords=self.learning_focus_keywords or [],
             learning_exclude_keywords=self.learning_exclude_keywords or [],
+            external_tool_names=self.external_tool_names or [],
         )
 
     def resolve_uploaded_files(self, upload_index: Dict[str, UploadedTaskFile]) -> List[UploadedTaskFile]:

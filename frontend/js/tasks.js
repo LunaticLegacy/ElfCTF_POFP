@@ -908,7 +908,8 @@ function buildTaskDetailData(task) {
     : {};
   const swarmRuns = normalizeTaskSwarmRuns(task.artifacts?.swarm_runs, knowledgeHarvestState);
   const autonomousWorkflow = normalizeTaskAutonomousWorkflow(task.artifacts?.autonomous_workflow);
-  const persistedContextSnapshot = normalizeTaskContextSnapshot(task.artifacts?.context_snapshot);
+  const agentStatus = normalizeTaskAgentStatus(task.artifacts?.agent_status, task.artifacts?.context_snapshot);
+  const persistedContextSnapshot = agentStatus.context;
   const pendingNewInput = taskDetailNewInputDraftState.has(task.id)
     ? taskDetailNewInputDraftState.get(task.id)
     : String(task.artifacts?.pending_new_input || '');
@@ -957,6 +958,7 @@ function buildTaskDetailData(task) {
     swarmRuns,
     autonomousWorkflow,
     knowledgeHarvestState,
+    agentStatus,
     contextSnapshot,
     pendingNewInput,
     newInputFeedback,
@@ -965,6 +967,7 @@ function buildTaskDetailData(task) {
     modulesLabel: task.modules?.length ? task.modules.join(', ') : '无',
     payloadLabel: task.payload ? task.payload : '默认',
     skillsLabel: formatTaskSkillsHtml(task.skills),
+    externalToolsLabel: formatTaskExternalToolsHtml(task.externalToolNames || task.external_tool_names),
     workspaceLabel: task.artifacts?.workspace_dir ? task.artifacts.workspace_dir : '未创建',
   };
 }
@@ -1127,6 +1130,24 @@ function formatTaskSkillsHtml(skills) {
   return names.length
     ? names.map(skill => `<span class="skill-tag">${escapeHtml(skill)}</span>`).join(' ')
     : '<span style="color:var(--text-muted)">默认</span>';
+}
+
+/**
+ * Build sanitized external tool chips for task detail surfaces.
+ *
+ * @param {Array} toolNames - External hotplug tool names attached to the task.
+ * @returns {string} HTML for tool chips or a muted default label.
+ */
+function formatTaskExternalToolsHtml(toolNames) {
+  if (!Array.isArray(toolNames)) {
+    return '<span style="color:var(--text-muted)">未选择</span>';
+  }
+  const names = [...new Set(toolNames
+    .map(name => String(name || '').trim())
+    .filter(name => name && name !== 'undefined' && name !== 'null'))];
+  return names.length
+    ? names.map(name => `<span class="skill-tag">${escapeHtml(name)}</span>`).join(' ')
+    : '<span style="color:var(--text-muted)">未选择</span>';
 }
 
 function getTaskEffectiveSolverEngine(task) {
@@ -2308,6 +2329,119 @@ function normalizeTaskContextSnapshot(rawValue) {
       memoryCount: Number.isFinite(Number(rawStats.memory_count)) ? Number(rawStats.memory_count) : memories.length,
     },
   };
+}
+
+function normalizeTaskAgentStatus(rawValue, fallbackContext) {
+  const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
+  const rawState = source.state && typeof source.state === 'object' ? source.state : {};
+  const normalizeList = value => Array.isArray(value)
+    ? value.map(item => String(item || '').trim()).filter(Boolean)
+    : [];
+  const context = normalizeTaskContextSnapshot(source.context || fallbackContext);
+  const rawStats = source.stats && typeof source.stats === 'object' ? source.stats : {};
+  return {
+    taskId: String(source.task_id || '').trim(),
+    state: {
+      task: String(rawState.task || '').trim(),
+      phase: String(rawState.phase || '').trim(),
+      facts: normalizeList(rawState.facts),
+      hypotheses: normalizeList(rawState.hypotheses),
+      failedActions: normalizeList(rawState.failed_actions),
+      doNotRepeat: normalizeList(rawState.do_not_repeat),
+      nextActions: normalizeList(rawState.next_actions),
+      artifacts: rawState.artifacts && typeof rawState.artifacts === 'object' ? rawState.artifacts : {},
+      credentials: Array.isArray(rawState.credentials) ? rawState.credentials : [],
+      knownRoutes: rawState.known_routes && typeof rawState.known_routes === 'object' ? rawState.known_routes : {},
+    },
+    stateText: String(source.state_text || '').trim(),
+    context,
+    activeIds: Array.isArray(source.active_ids) ? source.active_ids.map(item => Number(item)).filter(Number.isFinite) : [],
+    contextLength: Number(source.context_length ?? rawStats.context_length ?? 0),
+    nextContextId: Number(source.next_context_id ?? 0),
+    toolCount: Number(source.tool_count ?? 0),
+    persisted: Boolean(source.persisted),
+    stateFile: String(source.state_file || '').trim(),
+    updatedAt: Number(source.updated_at ?? 0),
+    stats: {
+      activeCount: Number(rawStats.active_count ?? 0),
+      contextLength: Number(rawStats.context_length ?? source.context_length ?? 0),
+    },
+  };
+}
+
+function renderTaskAgentStateSection(agentStatus) {
+  const state = agentStatus.state || {};
+  const renderList = (title, values, emptyText, kind = 'text') => {
+    if (kind === 'fact') {
+      return `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">${escapeHtml(title)}</div>
+          ${
+            Array.isArray(values) && values.length
+              ? `<div class="task-agent-fact-list">${values.slice(-8).map((item, index) => `
+                  <article class="task-agent-fact-item">
+                    <div class="task-agent-fact-index">#${index + 1}</div>
+                    <div class="task-agent-fact-text">${escapeHtml(item)}</div>
+                  </article>
+                `).join('')}</div>`
+              : `<div class="task-thinking-empty">${escapeHtml(emptyText)}</div>`
+          }
+        </div>
+      `;
+    }
+
+    if (kind === 'chip') {
+      return `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">${escapeHtml(title)}</div>
+          ${
+            Array.isArray(values) && values.length
+              ? `<div class="task-agent-chip-cloud">${values.slice(-10).map(item => `<span class="task-agent-state-chip">${escapeHtml(item)}</span>`).join('')}</div>`
+              : `<div class="task-thinking-empty">${escapeHtml(emptyText)}</div>`
+          }
+        </div>
+      `;
+    }
+
+    return `
+      <div class="task-thinking-subsection">
+        <div class="task-thinking-subtitle">${escapeHtml(title)}</div>
+        ${Array.isArray(values) && values.length
+          ? values.slice(-8).map(item => `<div class="task-thinking-item">${escapeHtml(item)}</div>`).join('')
+          : `<div class="task-thinking-empty">${escapeHtml(emptyText)}</div>`}
+      </div>
+    `;
+  };
+  const routes = Object.keys(state.knownRoutes || {})
+    .map(key => `${key}: ${state.knownRoutes[key]}`);
+  const artifactKeys = Object.keys(state.artifacts || {});
+  const metaRows = [
+    ['任务', state.task || agentStatus.taskId || '未记录'],
+    ['阶段', state.phase || 'initial'],
+    ['活跃 ID', agentStatus.activeIds.length ? agentStatus.activeIds.join(', ') : '无'],
+    ['下一 ID', String(agentStatus.nextContextId || '-')],
+    ['状态文件', agentStatus.stateFile || '未记录'],
+    ['更新时间', agentStatus.updatedAt ? formatDateTime(agentStatus.updatedAt * 1000) : '未记录'],
+  ].map(([label, value]) => `
+    <div class="task-meta-chip">
+      <div class="task-meta-chip-label">${escapeHtml(label)}</div>
+      <div class="task-meta-chip-value">${escapeHtml(String(value))}</div>
+    </div>
+  `).join('');
+
+  return `
+    <section class="task-thinking-section">
+      <div class="task-thinking-section-title">Agent State</div>
+      <div class="task-engineering-meta">${metaRows}</div>
+      ${renderList('事实', state.facts, '当前还没有记录事实。', 'fact')}
+      ${renderList('假设', state.hypotheses, '当前还没有记录假设。', 'chip')}
+      ${renderList('下一步', state.nextActions, '当前还没有记录下一步。', 'chip')}
+      ${renderList('失败动作', state.failedActions, '当前还没有失败动作。', 'chip')}
+      ${renderList('不要重复', state.doNotRepeat, '当前还没有禁止重复动作。', 'chip')}
+      ${renderList('已知路由', routes, '当前还没有记录路由。', 'chip')}
+      ${renderList('Artifacts', artifactKeys, '当前还没有 Agent 内部 artifact。', 'chip')}
+    </section>
+  `;
 }
 
 /**
@@ -4553,6 +4687,7 @@ function renderTaskDetailModal(detailData) {
     swarmRuns,
     autonomousWorkflow,
     knowledgeHarvestState,
+    agentStatus,
     contextSnapshot,
     pendingNewInput,
     newInputFeedback,
@@ -4562,7 +4697,8 @@ function renderTaskDetailModal(detailData) {
     modulesLabel,
     payloadLabel,
     workspaceLabel,
-    skillsLabel
+    skillsLabel,
+    externalToolsLabel
   } = detailData;
 
   // Clamp invalid tab state to tabs that the current task configuration actually supports.
@@ -4592,6 +4728,7 @@ function renderTaskDetailModal(detailData) {
   const swarmSubagentConfigLabel = task.executionMode === 'swarm'
     ? `${swarmSubagentAutoEnabled ? 'LLM 自动决定' : '固定建议值'} · ${task.swarmSubagentCountMin ?? '-'} / ${task.swarmSubagentCountSuggested ?? '-'} / ${task.swarmSubagentCountMax ?? '-'}`
     : '<span style="color:var(--text-muted)">仅 Swarm 模式显示</span>';
+  const contextModeLabel = task.contextMode === 'graph' ? '图式上下文（实验性）' : '线性上下文';
 
   // 工程块元数据
   const metaItems = [
@@ -4600,6 +4737,7 @@ function renderTaskDetailModal(detailData) {
     ['类型', getTaskTypeLabel(task.type)],
     ['任务模式', isLearningWorkflowTask(task) ? 'Luna-333 / 月天使（学习专用）' : task.taskMode === 'luna_333' ? 'Luna-333 / 月天使' : 'Classic Agent'],
     ['执行模式', isLearningWorkflowTask(task) ? (task.executionMode === 'swarm' ? 'Swarm 学习' : '单代理学习') : task.executionMode === 'swarm' ? 'Swarm 并行测试' : '单代理'],
+    ['上下文方式', contextModeLabel],
     ['学习策略', isLearningWorkflowTask(task) ? (task.learningMode === 'self_search' ? 'Self Search / 自搜索学习' : 'Focused / 定向学习') : '<span style="color:var(--text-muted)">仅学习任务显示</span>'],
     ['学习轮数', isLearningWorkflowTask(task) ? String(task.learningSearchRounds ?? '-') : '<span style="color:var(--text-muted)">仅学习任务显示</span>'],
     ['每轮候选', isLearningWorkflowTask(task) ? String(task.learningResultsPerQuery ?? '-') : '<span style="color:var(--text-muted)">仅学习任务显示</span>'],
@@ -4615,6 +4753,7 @@ function renderTaskDetailModal(detailData) {
     ['文件', filesLabel],
     ['Payload', payloadLabel],
     ['Skills', skillsLabel],
+    ['外置工具', externalToolsLabel],
     ['工作空间', workspaceLabel],
     ['创建时间', formatDateTime(task.created_at)]
   ];
@@ -4669,7 +4808,7 @@ function renderTaskDetailModal(detailData) {
         type="button"
         onclick="setTaskDetailTab('${task.id}', 'context')"
       >
-        上下文
+        Agent 状态
       </button>
       ${isLearningWorkflowTask(task) ? `
         <button
@@ -4827,22 +4966,28 @@ function renderTaskDetailModal(detailData) {
 
   // Render the structured context snapshot page from backend-persisted Agent state.
   const contextMetricsHtml = [
+    ['阶段', agentStatus.state.phase || 'initial'],
+    ['活跃上下文', String(agentStatus.stats.activeCount || agentStatus.activeIds.length)],
+    ['上下文长度', String(agentStatus.stats.contextLength || agentStatus.contextLength || 0)],
     ['未压缩', String(contextSnapshot.stats.uncompactedCount)],
     ['压缩', String(contextSnapshot.stats.compactedCount)],
     ['记忆', String(contextSnapshot.stats.memoryCount)],
+    ['工具', String(agentStatus.toolCount || 0)],
+    ['落盘', agentStatus.persisted ? '已保存' : '未保存'],
   ].map(([label, value]) => renderThinkingGraphMetric(label, value)).join('');
   const contextPageHtml = `
     <div class="task-detail-page task-detail-page-compact">
       <div class="task-detail-panel task-detail-panel-full">
         <div class="task-detail-panel-header">
-          <div class="task-detail-panel-title">🧠 当前上下文</div>
-          <div style="font-size:11px;color:var(--text-3)">展示 Agent 当前持有的未压缩、压缩和记忆快照</div>
+          <div class="task-detail-panel-title">Agent 状态</div>
+          <div style="font-size:11px;color:var(--text-3)">展示当前任务绑定 Agent 的状态、活跃上下文和落盘位置</div>
         </div>
         <div class="task-detail-panel-body task-thinking-graph task-context-body" data-scroll-key="contextSnapshot">
           <section class="task-thinking-section">
-            <div class="task-thinking-section-title">上下文概览</div>
+            <div class="task-thinking-section-title">状态概览</div>
             <div class="task-thinking-metrics">${contextMetricsHtml}</div>
           </section>
+          ${renderTaskAgentStateSection(agentStatus)}
           ${renderTaskContextSection('未压缩', contextSnapshot.uncompacted, 'uncompacted')}
           ${renderTaskContextSection('压缩', contextSnapshot.compacted, 'compacted')}
           ${renderTaskContextSection('记忆', contextSnapshot.memories, 'memory')}

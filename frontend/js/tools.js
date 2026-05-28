@@ -663,7 +663,7 @@ async function renderToolsList() {
     container.innerHTML = '<div class="tools-empty">没有找到匹配的工具</div>';
   } else {
     container.innerHTML = tools.map(tool => {
-      const args = tool.arguments_schema || {};
+      const args = getToolParameterMap(tool);
       const argList = Object.entries(args).map(([name, desc]) => 
         `<div class="tool-arg"><span class="tool-arg-name">${escapeHtml(name)}</span><span class="tool-arg-desc">${escapeHtml(desc)}</span></div>`
       ).join('');
@@ -804,12 +804,12 @@ function createUploadScriptModal() {
               <div class="upload-text" id="scriptUploadText">
                 点击或拖拽上传多个文件
                 <br>
-                <span style="opacity:0.6;font-size:12px">必须包含一个带 handler(args) 的 .py 主文件</span>
+                <span style="opacity:0.6;font-size:12px">必须包含一个 .py 主文件，参数会整理成当前 tool schema</span>
               </div>
               <div class="upload-file-list" id="scriptFileList" style="display: none; margin-top: 10px; text-align: left; font-size: 13px;"></div>
             </div>
             <div class="form-group" id="mainFileSelector" style="display: none; margin-top: 12px; margin-bottom: 0;">
-              <label>主文件（包含 handler 的 .py）*</label>
+              <label>主文件（.py 可执行入口）*</label>
               <select class="form-input" id="mainFileSelect" style="width: 100%; padding: 8px 12px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm);"></select>
             </div>
             <div id="handlerCheckResult" style="margin-top: 10px; padding: 10px 12px; border-radius: 6px; font-size: 13px; display: none;">
@@ -821,8 +821,8 @@ function createUploadScriptModal() {
             <div style="margin-top: 8px; padding: 10px; background: rgba(59, 130, 246, 0.1); border-radius: 6px; border-left: 3px solid #3b82f6;">
               <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.5;">
                 <strong style="color: var(--text-primary);">Python 文件要求：</strong><br>
-                • 必须定义 <code style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px;">def handler(args)</code> 函数<br>
-                • 函数接收一个字典参数，返回包含 success 字段的字典<br>
+                • 主文件需要提供可调用入口，后端会把参数整理成当前 tool schema<br>
+                • 运行结果应返回可读文本或包含 success 字段的对象<br>
                 • 示例：<code style="background: rgba(0,0,0,0.2); padding: 2px 6px; border-radius: 3px;">return {'success': True, 'result': '...'}</code>
               </div>
             </div>
@@ -955,6 +955,25 @@ function extractPythonDoc(content) {
     handlerDoc: handlerDoc,
     argumentsSchema: argumentsSchema
   };
+}
+
+/**
+ * 提取工具参数映射，优先使用 JSON schema 的 properties
+ */
+function getToolParameterMap(tool) {
+  const schema = tool.parameters && typeof tool.parameters === 'object' ? tool.parameters : null;
+  if (schema && schema.properties && typeof schema.properties === 'object') {
+    const result = {};
+    for (const [name, value] of Object.entries(schema.properties)) {
+      if (value && typeof value === 'object') {
+        result[name] = value.description || value.title || '';
+      } else {
+        result[name] = '';
+      }
+    }
+    return result;
+  }
+  return tool.arguments_schema || {};
 }
 
 // 当前选中的上传文件列表
@@ -1256,9 +1275,9 @@ async function submitScriptUpload() {
 
     if (data.success) {
       const toolName = data.data?.name || '未知';
-      const action = data.data?.action === 'update' ? '更新' : '创建';
+      const action = data.data?.action === 'updated' ? '更新' : '创建';
       const hash = data.data?.hash ? data.data.hash.substring(0, 8) : '';
-      const argsSchema = data.data?.arguments_schema || {};
+      const argsSchema = data.data?.parameters?.properties ? data.data.parameters.properties : (data.data?.arguments_schema || {});
       const hasDoc = data.data?.has_doc;
       const docPreview = data.data?.doc_preview;
       const attachments = data.data?.attachments || [];
@@ -1270,7 +1289,7 @@ async function submitScriptUpload() {
 
       const paramCount = Object.keys(argsSchema).length;
       if (paramCount > 0) {
-        const paramList = Object.entries(argsSchema).map(([k, v]) => `${k}`).join(', ');
+        const paramList = Object.keys(argsSchema).join(', ');
         details += `\n📋 提取到 ${paramCount} 个参数: ${paramList}`;
       }
 
@@ -1296,7 +1315,7 @@ async function submitScriptUpload() {
       }, 1500);
     } else {
       const errorMsg = data.message || '上传失败，请检查文件内容';
-      showUploadResult('error', '上传失败', errorMsg, '请确保主文件包含有效的 handler 函数');
+      showUploadResult('error', '上传失败', errorMsg, '请确保主文件包含可调用入口');
       showToast(errorMsg, 'error');
     }
   } catch (error) {

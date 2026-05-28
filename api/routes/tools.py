@@ -300,7 +300,7 @@ async def hotplug_upload_script(request: Request) -> JSONResponse:
     if not py_files:
         return api_response(success=False, message='上传文件中必须包含至少一个 .py 文件', status_code=400)
 
-    # Locate Python files that define the required handler(args) function.
+    # Locate Python files that define the required callable entry point.
     handler_files = []
     for filename in py_files:
         try:
@@ -310,7 +310,7 @@ async def hotplug_upload_script(request: Request) -> JSONResponse:
         except UnicodeDecodeError:
             continue
     if not handler_files:
-        return api_response(success=False, message='Python 文件中必须定义 handler(args) 函数', status_code=400)
+        return api_response(success=False, message='Python 文件中必须定义可调用入口', status_code=400)
 
     # Determine the main handler file from form input or default to the first match.
     main_file = str(form.get('main_file', '')).strip()
@@ -340,6 +340,7 @@ async def hotplug_upload_script(request: Request) -> JSONResponse:
     handler_doc = _extract_handler_doc(main_content)
     doc = module_doc or handler_doc
     arguments_schema = _extract_arguments_schema(doc or handler_doc)
+    parameters = _build_parameters_schema(arguments_schema)
 
     # Persist uploaded files and optional markdown docs into hotplug storage.
     storage_dir = Path(hotplug_manager._storage_dir)
@@ -363,10 +364,15 @@ async def hotplug_upload_script(request: Request) -> JSONResponse:
     tool_def = {
         'name': tool_name,
         'description': description,
+        'parameters': parameters,
         'arguments_schema': arguments_schema,
         'category': str(form.get('category', 'utility')),
         'dangerous': str(form.get('dangerous', 'false')).lower() == 'true',
         'code_path': str(code_file_path),
+        'runtime': {
+            'kind': 'python_module',
+            'entrypoint': 'handler',
+        },
     }
     if doc_path:
         tool_def['doc_path'] = doc_path
@@ -391,6 +397,7 @@ async def hotplug_upload_script(request: Request) -> JSONResponse:
                 'name': tool_name,
                 'hash': result['hash'],
                 'action': result.get('action'),
+                'parameters': parameters,
                 'arguments_schema': arguments_schema,
                 'has_doc': bool(doc),
                 'doc_preview': doc[:200] + '...' if doc and len(doc) > 200 else doc if doc else None,
@@ -466,3 +473,21 @@ def _extract_arguments_schema(doc: str) -> Dict[str, str]:
             arg_desc = match.group(2).strip()
             arguments_schema[arg_name] = arg_desc
     return arguments_schema
+
+
+def _build_parameters_schema(arguments_schema: Dict[str, str]) -> Dict[str, object]:
+    """Convert legacy argument hints into a JSON schema tool definition."""
+    properties = {
+        name: {
+            'type': 'string',
+            'description': description,
+        }
+        for name, description in arguments_schema.items()
+    }
+    required = list(arguments_schema.keys())
+    return {
+        'type': 'object',
+        'properties': properties,
+        'required': required,
+        'additionalProperties': True,
+    }

@@ -212,6 +212,70 @@ CTF_DOMAIN_SCHEMAS = {
 }
 
 
+def build_ctf_system_prompt(
+    *,
+    workspace: str,
+    task_name: str,
+    task_type: str,
+    target: str,
+    user_prompt_supplement: str,
+) -> str:
+    """Build the base system prompt for the CTF task agent."""
+    return f"""You are ElfCTF's autonomous CTF solving agent.
+
+Work only inside this task workspace: {workspace}
+
+Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
+Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
+When you find a flag, save it to flag.txt, and then summarize how to proceed at proceed.md. Then reply "Finish." without tool call to finish.
+You can find some useful information in the archived context by fetching the original context by abstracts and tags.
+
+Memory policy:
+- You have access to `memory_create`, `memory_list`, and `memory_clear`.
+- Use memory tools deliberately when a stable fact, durable constraint, important path, recovered secret format, confirmed dead end, or expensive-to-reconstruct conclusion is discovered.
+- Before a large context segment is likely to be compressed away, consider whether future you would regret losing its key conclusions; if yes, create a memory from the smallest sufficient context ids.
+- Use `context_list` and `context_read` to find the right context ids before calling `memory_create`.
+- Prefer concise reusable memories, not raw logs or speculative notes.
+- Periodically check `memory_list` when starting a new subproblem or when the investigation seems stalled.
+- Do not create duplicate memories, and do not store temporary chatter or unverified guesses as memory.
+
+Context selection policy:
+- When reseating the active context window, prefer compacted summaries if they already preserve the needed facts.
+- Select raw context ids only when you need details that were lost in compression.
+- If a compacted entry is the best available representation, keep the compacted entry instead of forcing expansion.
+- Apply the same rule recursively for multi-level compression: keep the compacted entry when sufficient, otherwise select the underlying raw ids that still exist in the timeline.
+
+Task name: {task_name}
+Task type: {task_type}
+Target: {target or '(none)'}
+User prompt supplement:
+{user_prompt_supplement or '(none)'}
+"""
+
+
+def build_ctf_user_prompt(
+    *,
+    mode: str,
+    attached_files: str,
+    target: str,
+    additional_input: str,
+) -> str:
+    """Build the user prompt sent to the agent for one workflow run."""
+    normalized_mode = "start" if mode == "retry" else mode
+    extra = f"\nAdditional user input:\n{additional_input}" if additional_input else ""
+    return f"""Mode: {normalized_mode}
+
+Solve this CTF task.
+
+Attached files:
+{attached_files or '- no files attached'}
+
+Target:
+{target or '(none)'}
+{extra}
+"""
+
+
 def build_ctf_compression_profile(task_type: str) -> ContextCompressionProfile:
     """Build one CTF compression profile for the supplied task type.
 

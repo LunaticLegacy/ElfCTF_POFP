@@ -350,6 +350,14 @@
                 <option value="swarm">Swarm 并行</option>
               </select>
             </div>
+            <div class="form-group">
+              <label>上下文方式</label>
+              <select class="form-input" id="taskContextMode">
+                <option value="linear">线性上下文</option>
+                <option value="graph">图式上下文（实验性）</option>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">任务创建后不可更改</small>
+            </div>
             <div class="form-group hidden" id="taskSwarmSubagentConfigGroup">
               <label>Swarm 子 Agent 数量</label>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -394,6 +402,12 @@
               <select class="form-input skill-select" id="taskSkills" multiple>
               </select>
               <small style="color:var(--text-3);font-size:12px;">按住 Ctrl/Command 可多选，留空则使用默认配置</small>
+            </div>
+            <div class="form-group">
+              <label>外置热插拔工具</label>
+              <select class="form-input skill-select" id="taskExternalTools" multiple>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">任务创建时选择，创建后不可更改</small>
             </div>
           </section>
         </div>
@@ -519,6 +533,14 @@
                 <option value="swarm">Swarm 并行</option>
               </select>
             </div>
+            <div class="form-group">
+              <label>上下文方式</label>
+              <select class="form-input" id="editTaskContextMode" disabled>
+                <option value="linear">线性上下文</option>
+                <option value="graph">图式上下文（实验性）</option>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">上下文方式在任务创建后不可更改</small>
+            </div>
             <div class="form-group hidden" id="editTaskSwarmSubagentConfigGroup">
               <label>Swarm 子 Agent 数量</label>
               <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -563,6 +585,12 @@
               <select class="form-input skill-select" id="editTaskSkills" multiple>
               </select>
               <small style="color:var(--text-3);font-size:12px;">按住 Ctrl/Command 可多选</small>
+            </div>
+            <div class="form-group">
+              <label>外置热插拔工具</label>
+              <select class="form-input skill-select" id="editTaskExternalTools" multiple disabled>
+              </select>
+              <small style="color:var(--text-3);font-size:12px;">创建后不可更改，仅用于查看当前配置</small>
             </div>
           </section>
         </div>

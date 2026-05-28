@@ -90,11 +90,13 @@ function closeModal() {
   setInputValue('taskSystemPrompt', '');
   setInputValue('taskMode', 'classic');
   setInputValue('taskExecutionMode', 'single');
+  setInputValue('taskContextMode', 'linear');
   applySwarmSubagentConfig('task', DEFAULT_SWARM_SUBAGENT_CONFIG);
   applyLearningConfig('task', DEFAULT_LEARNING_CONFIG);
   setInputValue('batchTaskInput', '');
   setInputValue('taskType', 'RE');
   setInputValue('taskFileInput', '');
+  setSelectedValues('taskExternalTools', []);
   setTaskCreateMode('single');
   onTaskTypeChange();
   onTaskModeChange();
@@ -606,6 +608,56 @@ function resetTaskCreateProgress() {
 // ═══════════════════════════════════════════════════════════════
 
 let currentEditingTaskId = null;
+let cachedHotplugTools = [];
+
+async function loadHotplugTools(forceReload = false) {
+  if (!forceReload && Array.isArray(cachedHotplugTools) && cachedHotplugTools.length > 0) {
+    return cachedHotplugTools;
+  }
+  if (!isAuthenticated()) {
+    return [];
+  }
+
+  try {
+    const result = await apiRequest(`${API_BASE}/tools/hotplug`);
+    if (result.success && Array.isArray(result.data)) {
+      cachedHotplugTools = result.data;
+      return cachedHotplugTools;
+    }
+  } catch (err) {
+    console.error('加载外置热插拔工具失败:', err);
+  }
+  return [];
+}
+
+async function populateHotplugToolsSelect(selectId, selectedTools = []) {
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const tools = await loadHotplugTools(true);
+  const selectedList = (Array.isArray(selectedTools) ? selectedTools : []).map(item => String(item || '').trim()).filter(Boolean);
+  const selectedSet = new Set(selectedList);
+  const availableNames = new Set(tools.map(tool => String(tool.name || '').trim()).filter(Boolean));
+  const missingSelected = selectedList.filter(name => !availableNames.has(name));
+
+  if (tools.length === 0 && missingSelected.length === 0) {
+    select.innerHTML = '<option value="">暂无可用外置工具</option>';
+    return;
+  }
+
+  const availableOptions = tools.map(tool => `
+    <option value="${escapeHtml(tool.name || '')}" ${selectedSet.has(String(tool.name || '').trim()) ? 'selected' : ''}>
+      ${escapeHtml(tool.name || '')}${tool.description ? ` - ${escapeHtml(tool.description)}` : ''}
+    </option>
+  `).join('');
+  const missingOptions = missingSelected.length
+    ? `<optgroup label="已失效的已选工具">${missingSelected.map(name => `
+        <option value="${escapeHtml(name)}" selected disabled>${escapeHtml(name)}（已失效）</option>
+      `).join('')}</optgroup>`
+    : '';
+
+  select.innerHTML = `${availableOptions}${missingOptions}`;
+}
 
 /**
  * 打开编辑任务模态框
@@ -634,6 +686,7 @@ async function openEditTaskModal(taskId) {
   setInputValue('editTaskSystemPrompt', task.systemPrompt || '');
   setInputValue('editTaskMode', task.taskMode || 'classic');
   setInputValue('editTaskExecutionMode', task.executionMode || 'single');
+  setInputValue('editTaskContextMode', task.contextMode || 'linear');
   applyLearningConfig('editTask', {
     mode: task.learningMode,
     searchRounds: task.learningSearchRounds,
@@ -668,6 +721,7 @@ async function openEditTaskModal(taskId) {
     await loadSkills(task.type || 'RE');
   }
   populateSkillsSelect('editTaskSkills', task.skills || [], task.type || 'RE');
+  await populateHotplugToolsSelect('editTaskExternalTools', task.externalToolNames || task.external_tool_names || []);
 
   // 显示文件列表
   const filesContainer = document.getElementById('editTaskFiles');
@@ -759,11 +813,12 @@ async function populateMcpSelect(selectId, selectedMcp = '') {
 /**
  * 打开新建任务模态框
  */
-function openNewTaskModal() {
+async function openNewTaskModal() {
   document.getElementById('modalBg')?.classList.add('show');
   setTaskCreateMode('single');
   setInputValue('taskMode', 'classic');
   setInputValue('taskExecutionMode', 'single');
+  setInputValue('taskContextMode', 'linear');
   applySwarmSubagentConfig('task', DEFAULT_SWARM_SUBAGENT_CONFIG);
   applyLearningConfig('task', DEFAULT_LEARNING_CONFIG);
   onTaskTypeChange();
@@ -780,5 +835,6 @@ function openNewTaskModal() {
   } else if (Array.isArray(availableSkills) && availableSkills.length > 0) {
     populateSkillsSelect('taskSkills', [], document.getElementById('taskType')?.value || 'RE');
   }
+  await populateHotplugToolsSelect('taskExternalTools', []);
 
 }

@@ -356,6 +356,28 @@ function getSelectedSkills(selectId) {
   return Array.from(select.selectedOptions).map(opt => opt.value);
 }
 
+/**
+ * 获取多选框当前选中的值列表。
+ */
+function getSelectedValues(selectId) {
+  const select = document.getElementById(selectId);
+  if (!select) return [];
+  return Array.from(select.selectedOptions).map(opt => opt.value);
+}
+
+/**
+ * 设置多选框的选中值列表。
+ */
+function setSelectedValues(selectId, values = []) {
+  const select = document.getElementById(selectId);
+  if (!select) return false;
+  const selectedSet = new Set((Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter(Boolean));
+  Array.from(select.options || []).forEach(option => {
+    option.selected = selectedSet.has(option.value);
+  });
+  return true;
+}
+
 function getInputValue(id, fallback = '') {
   const element = document.getElementById(id);
   return element ? String(element.value ?? fallback) : String(fallback);

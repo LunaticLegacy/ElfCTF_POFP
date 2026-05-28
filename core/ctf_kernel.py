@@ -3,25 +3,33 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import sys
 import threading
-from dataclasses import dataclass
+import time
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 
 from core.json_types import JsonObject
 from modules.llmfetcher import Agent, LLMFetcher, create_ctf_tools, create_obscura_tools, create_shell_tools
+from modules.llmfetcher.agent import AgentState
 from modules.llmfetcher.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
 from modules.llmfetcher.llm_context import LLMContext, LLMContextCompacted
-from modules.llmfetcher.llm_types import LLMBackendConfig
+from modules.llmfetcher.llm_types import LLMBackendConfig, LLMInfo
 from modules.llmfetcher.tools.ctf_tools import create_knowledge_tools
+from services.tools.hotplug import hotplug_manager
 from modules.rag.knowledge_base import KnowledgeBase
 
 from .models import CTFTask, TaskStatus
 from .models import RuntimeConfig
-from .ctf_prompt import build_ctf_compression_profile
+from .ctf_prompt import (
+    build_ctf_compression_profile,
+    build_ctf_system_prompt,
+    build_ctf_user_prompt,
+)
 
 FLAG_PATTERN = re.compile(r"(?i)\b(?:flag|ctf|elfctf)\{[^}\s]{1,200}\}")
 
@@ -291,6 +299,37 @@ class CTFWorkflowService:
 
         self._threads: Dict[str, threading.Thread] = {}     # 线程
         self._stop_events: Dict[str, threading.Event] = {}  # 停止事件列表
+        self._agents: Dict[str, Agent] = {}
+        self._agent_lock = threading.RLock()
+
+    def create_agent_for_task(self, task: CTFTask) -> Agent:
+        """Create or load the durable Agent assigned to one task."""
+        with self._agent_lock:
+            agent = self._agents.get(task.id)
+            if agent is not None:
+                self._publish_agent_status(task.id, agent)
+                return agent
+
+            agent = self._load_agent_for_task(task)
+            if agent is None:
+                agent = self._build_agent_for_task(task, RuntimeConfig())
+                self._persist_agent_for_task(task.id, agent)
+            self._agents[task.id] = agent
+            self._publish_agent_status(task.id, agent)
+            return agent
+
+    def discard_agent_for_task(self, task_id: str) -> None:
+        """Drop the live Agent reference when a task is deleted."""
+        with self._agent_lock:
+            self._agents.pop(task_id, None)
+
+    def get_agent_status(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """Return the current live-or-persisted Agent status for a task."""
+        task = self.task_manager.get_task(task_id)
+        if task is None:
+            return None
+        agent = self.create_agent_for_task(task)
+        return self._build_agent_status_snapshot(task_id, agent)
 
     def start_ctf_analysis(self, task_id: str) -> WorkflowResult:
         """Start solving a CTF task in a background thread."""
@@ -308,6 +347,10 @@ class CTFWorkflowService:
         task.logs.clear()
         task.result = ''
         task.error = ''
+        with self._agent_lock:
+            self._agents[task_id] = self._build_agent_for_task(task, RuntimeConfig())
+            self._persist_agent_for_task(task_id, self._agents[task_id])
+            self._publish_agent_status(task_id, self._agents[task_id])
         self.task_manager.update_status(task_id, TaskStatus.PENDING)
         return self._start_task(task_id, mode='retry')
 
@@ -375,9 +418,11 @@ class CTFWorkflowService:
             asyncio.run(self._run_agent(task_id, runtime_config, stop_event, mode))
         except Exception as exc:
             # Record the failure in task logs and task status so polling UIs can surface the error.
+            self._persist_live_agent(task_id)
             self.task_manager.add_log(task_id, f'任务失败: {exc}')
             self.task_manager.update_status(task_id, TaskStatus.FAILED, error=str(exc))
         finally:
+            self._persist_live_agent(task_id)
             # Always release thread-local bookkeeping after the worker exits.
             self._threads.pop(task_id, None)
             self._stop_events.pop(task_id, None)
@@ -410,71 +455,19 @@ class CTFWorkflowService:
             self.task_manager.update_status(task_id, TaskStatus.STOPPED)
             return
 
-        # Build a CTF-aware prompt from task metadata, attached files, and selected skills.
         workspace = Path(task.workspace)
         workspace.mkdir(parents=True, exist_ok=True)
-        file_names = [file_info.name for file_info in task.config.files]
-        classification = classify_ctf_challenge(
-            f'{task.config.name}\n{task.config.target}\n{task.config.system_prompt}',
-            files=file_names,
-        )
-        selected_skill_ids = tuple(task.config.skills) if task.config.skills else classification.skill_ids
-        classification = type(classification)(
-            category=classification.category,
-            task_type=classification.task_type,
-            skill_ids=selected_skill_ids,
-            scores=classification.scores,
-            reasons=classification.reasons,
-        )
-        system_prompt = enrich_prompt_with_ctf_skills(
-            self._base_system_prompt(task, workspace),
-            self.skills_root,
-            classification,
-        )
-
-        # Construct tools scoped to the task workspace plus optional knowledge search.
-        knowledge_base = KnowledgeBase(self.kb_root) if self.kb_root.exists() else None
         provider = _resolve_backend_provider(runtime_config.connector_type)
         tool_provider = _resolve_agent_tool_provider(provider)
-        tools = (   # 创建工具，包括 shell ctf，还有知识库
-            create_shell_tools(sandbox_cwd=str(workspace))
-            + create_ctf_tools(workspace)
-            # + create_obscura_tools()  # obscura - 但一些用户的电脑里可能没有 obscura，这东西是一个无头浏览器，在 github 里可以找到。
-            + create_knowledge_tools(knowledge_base)
-        )
-
-        # 拉取模型使用的。
-        # todo: 当前的 kernel 语义不正确，创建 fetcher 和 agent 的时间点需要在创建任务时，而非执行任务时。
-        fetcher_config = LLMBackendConfig(
-            name="default",
-            api_url=runtime_config.api_base or None,
-            api_key=runtime_config.api_key,
-            model=runtime_config.model,
-            provider=provider,
-            timeout=runtime_config.timeout,
-        )
-        fetcher = LLMFetcher(
-            backends=[fetcher_config]
-        )
-
-        # 根据当前任务类型构造上下文压缩 profile，使自动归档出的摘要
-        # 能够携带与题型匹配的结构化提炼规则。
-        compression_profile = build_ctf_compression_profile(task.config.task_type.value)
-
-        agent = Agent(
-            llm_handler=fetcher,
-            system_prompt=system_prompt,
-            tools=tools,
-            provider=tool_provider,
-            max_concurrent_tools=4,
-            compression_profile=compression_profile,
-        )
+        classification = self._configure_agent_for_task(task, runtime_config)
+        agent = self.create_agent_for_task(task)
         prompt = self._user_prompt(task, mode)
 
         # Seed task artifacts that the frontend can show even before the run finishes.
         self.task_manager.set_task_artifact(task_id, 'workspace_dir', str(workspace))
         self.task_manager.set_task_artifact(task_id, 'pending_new_input', task.pending_new_input)
         self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
+        self.task_manager.set_task_artifact(task_id, 'agent_status', self._build_agent_status_snapshot(task_id, agent))
 
         # Emit the standard run metadata into the human-readable task log stream.
         self.task_manager.add_log(task_id, f'已加载技能: {", ".join(classification.skill_ids)}')
@@ -503,7 +496,9 @@ class CTFWorkflowService:
         verbose_writer.flush()
 
         # Refresh persisted context artifacts after the agent loop has produced final state.
+        self._persist_agent_for_task(task_id, agent)
         self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
+        self.task_manager.set_task_artifact(task_id, 'agent_status', self._build_agent_status_snapshot(task_id, agent))
         self.task_manager.set_task_artifact(task_id, 'pending_new_input', task.pending_new_input)
 
         # Finalize task lifecycle based on stop state and detected terminal result.
@@ -514,6 +509,267 @@ class CTFWorkflowService:
         self._maybe_auto_submit_flag(task, runtime_config, result)
         self.task_manager.add_log(task_id, 'Agent workflow 已完成')
         self.task_manager.update_status(task_id, TaskStatus.COMPLETED, result=result)
+
+    def _build_agent_for_task(self, task: CTFTask, runtime_config: RuntimeConfig) -> Agent:
+        """Construct the durable Agent object for one task."""
+        provider = _resolve_backend_provider(runtime_config.connector_type)
+        fetcher = self._build_fetcher(runtime_config, provider)
+        workspace = Path(task.workspace)
+        compression_profile = build_ctf_compression_profile(task.config.task_type.value)
+        agent = Agent(
+            llm_handler=fetcher,
+            system_prompt=self._base_system_prompt(task, workspace),
+            tools=[],
+            provider=_resolve_agent_tool_provider(provider),
+            max_concurrent_tools=4,
+            compression_profile=compression_profile,
+            context_mode='graph' if task.config.context_mode == 'graph' else 'linear',
+        )
+        agent.agent_state.task = task.config.name or task.id
+        return agent
+
+    def _configure_agent_for_task(self, task: CTFTask, runtime_config: RuntimeConfig):
+        """Refresh the task Agent with current runtime config, prompt, and tools."""
+        agent = self.create_agent_for_task(task)
+        workspace = Path(task.workspace)
+        workspace.mkdir(parents=True, exist_ok=True)
+        provider = _resolve_backend_provider(runtime_config.connector_type)
+        tool_provider = _resolve_agent_tool_provider(provider)
+        fetcher = self._build_fetcher(runtime_config, provider)
+        classification = self._classify_task(task)
+        system_prompt = enrich_prompt_with_ctf_skills(
+            self._base_system_prompt(task, workspace),
+            self.skills_root,
+            classification,
+        )
+        knowledge_base = KnowledgeBase(self.kb_root) if self.kb_root.exists() else None
+        selected_external_tool_names = [
+            str(name).strip()
+            for name in (task.config.external_tool_names or [])
+            if str(name).strip()
+        ]
+        available_external_tool_names = set(hotplug_manager.get_hotplug_tool_names())
+        missing_external_tool_names = [
+            name for name in selected_external_tool_names
+            if name not in available_external_tool_names
+        ]
+        tools = (
+            create_shell_tools(sandbox_cwd=str(workspace))
+            + create_ctf_tools(workspace)
+            + create_knowledge_tools(knowledge_base)
+            + hotplug_manager.build_runtime_tools(
+                default_cwd=workspace,
+                tool_names=task.config.external_tool_names,
+            )
+        )
+
+        agent.llm_handler = fetcher
+        agent.llm_context_handler.llm_handler = fetcher
+        agent.update_system_prompt(system_prompt)
+        agent.provider = tool_provider
+        agent.context_mode = 'graph' if task.config.context_mode == 'graph' else 'linear'
+        agent.llm_context_handler.configure_context_mode(
+            agent.context_mode,
+            enable_tagging=agent.context_mode == 'graph',
+        )
+        agent.llm_context_handler.compression_profile = build_ctf_compression_profile(task.config.task_type.value)
+        agent.tool_registry = agent.tool_registry.__class__()
+        agent._register_builtin_tools()
+        for tool in tools:
+            agent.add_tool(tool)
+        if missing_external_tool_names:
+            self.task_manager.add_log(
+                task.id,
+                f'外置工具未找到: {", ".join(missing_external_tool_names)}',
+            )
+        if not agent.agent_state.task:
+            agent.agent_state.task = task.config.name or task.id
+        self._publish_agent_status(task.id, agent)
+        return classification
+
+    def _classify_task(self, task: CTFTask):
+        """Classify one task and honor explicit skill choices."""
+        file_names = [file_info.name for file_info in task.config.files]
+        classification = classify_ctf_challenge(
+            f'{task.config.name}\n{task.config.target}\n{task.config.system_prompt}',
+            files=file_names,
+        )
+        selected_skill_ids = tuple(task.config.skills) if task.config.skills else classification.skill_ids
+        return type(classification)(
+            category=classification.category,
+            task_type=classification.task_type,
+            skill_ids=selected_skill_ids,
+            scores=classification.scores,
+            reasons=classification.reasons,
+        )
+
+    def _build_fetcher(self, runtime_config: RuntimeConfig, provider: str) -> LLMFetcher:
+        """Build the LLM fetcher used by an Agent for current runtime settings."""
+        fetcher_config = LLMBackendConfig(
+            name="default",
+            api_url=runtime_config.api_base or None,
+            api_key=runtime_config.api_key,
+            model=runtime_config.model,
+            provider=provider,
+            timeout=runtime_config.timeout,
+        )
+        return LLMFetcher(backends=[fetcher_config])
+
+    def _agent_state_file(self, task_id: str) -> Path:
+        """Return the durable Agent state JSON path for one task."""
+        return self.task_manager.tasks_dir / task_id / 'agent_state.json'
+
+    def _persist_live_agent(self, task_id: str) -> None:
+        """Persist and publish a live Agent if it exists."""
+        with self._agent_lock:
+            agent = self._agents.get(task_id)
+        if agent is not None:
+            self._persist_agent_for_task(task_id, agent)
+            self._publish_agent_status(task_id, agent)
+
+    def _persist_agent_for_task(self, task_id: str, agent: Agent) -> None:
+        """Write one Agent's durable state to disk as JSON."""
+        state_file = self._agent_state_file(task_id)
+        state_file.parent.mkdir(parents=True, exist_ok=True)
+        state_file.write_text(
+            json.dumps(self._serialize_agent(agent), ensure_ascii=False, indent=2),
+            encoding='utf-8',
+        )
+
+    def _load_agent_for_task(self, task: CTFTask) -> Optional[Agent]:
+        """Load a task Agent from disk when a persisted state exists."""
+        state_file = self._agent_state_file(task.id)
+        if not state_file.is_file():
+            return None
+        try:
+            payload = json.loads(state_file.read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        agent = self._build_agent_for_task(task, RuntimeConfig())
+        self._restore_agent(agent, payload)
+        return agent
+
+    def _publish_agent_status(self, task_id: str, agent: Agent) -> None:
+        """Expose live Agent status through task artifacts for frontend polling."""
+        self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
+        self.task_manager.set_task_artifact(task_id, 'agent_status', self._build_agent_status_snapshot(task_id, agent))
+
+    def _serialize_agent(self, agent: Agent) -> Dict[str, Any]:
+        """Serialize an Agent's stable state without runtime-only tool callables."""
+        context_handler = agent.context_manager
+        entries = []
+        for context_id, entry in sorted(context_handler.context_timeline_dict.items()):
+            if isinstance(entry, LLMContext):
+                entries.append({
+                    'kind': 'raw',
+                    'id': context_id,
+                    'timeline': entry.timeline,
+                    'role': entry.role,
+                    'content': entry.content,
+                    'tool_call_info': list(entry.tool_call_info or []),
+                    'tags': list(entry.tags or []),
+                })
+                continue
+            if isinstance(entry, LLMContextCompacted):
+                entries.append({
+                    'kind': 'compacted',
+                    'id': context_id,
+                    'timeline': entry.timeline,
+                    'abstract_msg': entry.abstract_msg,
+                    'source_ids': [source.timeline for source in entry.source],
+                    'source_timeline': list(entry.source_timeline),
+                    'tags': list(entry.tags or []),
+                })
+        return {
+            'version': 1,
+            'saved_at': time.time(),
+            'context_mode': agent.context_mode,
+            'agent_state': asdict(agent.agent_state),
+            'context': {
+                'context_mode': context_handler.context_mode,
+                'now_context_id': context_handler.now_context_id,
+                'active_ids': context_handler.get_active_ids_window(),
+                'entries': entries,
+                'memories': context_handler.copy_memories() or [],
+            },
+        }
+
+    def _restore_agent(self, agent: Agent, payload: Dict[str, Any]) -> None:
+        """Restore serialized Agent state into an already constructed Agent."""
+        state_payload = payload.get('agent_state', {})
+        if isinstance(state_payload, dict):
+            valid_fields = AgentState.__dataclass_fields__.keys()
+            restored_state = AgentState(**{key: state_payload.get(key) for key in valid_fields if key in state_payload})
+            for list_field in ('facts', 'hypotheses', 'failed_actions', 'do_not_repeat', 'next_actions'):
+                if not isinstance(getattr(restored_state, list_field), list):
+                    setattr(restored_state, list_field, [])
+            if not isinstance(restored_state.artifacts, dict):
+                restored_state.artifacts = {}
+            if not isinstance(restored_state.credentials, list):
+                restored_state.credentials = []
+            if not isinstance(restored_state.known_routes, dict):
+                restored_state.known_routes = {}
+            agent.agent_state = restored_state
+
+        context_payload = payload.get('context', {})
+        if not isinstance(context_payload, dict):
+            return
+        handler = agent.context_manager
+        handler.clear()
+        pending_compacted = []
+        for item in context_payload.get('entries', []):
+            if not isinstance(item, dict):
+                continue
+            if item.get('kind') == 'raw':
+                entry = LLMContext(
+                    role=str(item.get('role') or 'assistant'),
+                    content=str(item.get('content') or ''),
+                    timeline=int(item.get('timeline') or item.get('id') or 0),
+                    tool_call_info=[str(value) for value in item.get('tool_call_info', [])] if isinstance(item.get('tool_call_info'), list) else [],
+                    tags=[str(value) for value in item.get('tags', [])] if isinstance(item.get('tags'), list) else [],
+                )
+                if entry.timeline > 0:
+                    handler.context_timeline_dict[entry.timeline] = entry
+                    if handler.retrieval_enabled:
+                        handler.context_index.index_context(
+                            entry,
+                            tag_to_context=handler.tag_to_context if handler.enable_tagging else None,
+                        )
+            elif item.get('kind') == 'compacted':
+                pending_compacted.append(item)
+
+        for item in pending_compacted:
+            try:
+                timeline = int(item.get('timeline') or item.get('id') or 0)
+            except (TypeError, ValueError):
+                continue
+            source_ids = [int(value) for value in item.get('source_ids', []) if str(value).strip().isdigit()]
+            sources: list[LLMInfo] = [
+                handler.context_timeline_dict[source_id]
+                for source_id in source_ids
+                if source_id in handler.context_timeline_dict
+            ]
+            source_timeline = [int(value) for value in item.get('source_timeline', []) if str(value).strip().isdigit()]
+            entry = LLMContextCompacted(
+                timeline=timeline,
+                abstract_msg=str(item.get('abstract_msg') or ''),
+                source=sources,
+                source_timeline=source_timeline,
+                tags=[str(value) for value in item.get('tags', [])] if isinstance(item.get('tags'), list) else [],
+            )
+            if entry.timeline > 0:
+                handler.context_timeline_dict[entry.timeline] = entry
+                if handler.retrieval_enabled:
+                    handler.context_index.index_context(
+                        entry,
+                        tag_to_context=handler.tag_to_context if handler.enable_tagging else None,
+                    )
+
+        handler.now_context_id = int(context_payload.get('now_context_id') or (max(handler.context_timeline_dict.keys(), default=0) + 1))
+        handler.set_active_ids([int(value) for value in context_payload.get('active_ids', []) if str(value).strip().isdigit()])
+        if handler.enable_memory and isinstance(handler.memory_list, list):
+            handler.memory_list[:] = [str(value) for value in context_payload.get('memories', [])]
 
     def _maybe_auto_submit_flag(self, task: CTFTask, runtime_config: RuntimeConfig, result: str) -> None:
         """
@@ -634,6 +890,7 @@ class CTFWorkflowService:
 
         # Return both raw sections and small counters so the frontend can render summary chips.
         return {
+            'context_mode': context_handler.context_mode,
             'uncompacted': uncompacted_entries,
             'compacted': compacted_entries,
             'memories': memory_entries,
@@ -644,38 +901,69 @@ class CTFWorkflowService:
             },
         }
 
+    def _build_agent_status_snapshot(self, task_id: str, agent: Agent) -> Dict[str, Any]:
+        """Build the frontend-facing Agent state payload for one task."""
+        self._backfill_agent_state_from_context(agent)
+        context_snapshot = self._build_agent_context_snapshot(agent)
+        state_file = self._agent_state_file(task_id)
+        context_handler = agent.context_manager
+        return {
+            'task_id': task_id,
+            'state': asdict(agent.agent_state),
+            'state_text': agent._render_agent_state(),
+            'context': context_snapshot,
+            'active_ids': context_handler.get_active_ids_window(),
+            'context_length': context_handler.context_len(),
+            'context_mode': agent.context_mode,
+            'retrieval_enabled': context_handler.retrieval_enabled,
+            'next_context_id': context_handler.now_context_id,
+            'tool_count': len(agent.tool_registry.schemas),
+            'persisted': state_file.is_file(),
+            'state_file': str(state_file),
+            'updated_at': time.time(),
+            'stats': {
+                **context_snapshot.get('stats', {}),
+                'active_count': len(context_handler.get_active_ids_window()),
+                'context_length': context_handler.context_len(),
+            },
+        }
+
+    def _backfill_agent_state_from_context(self, agent: Agent) -> None:
+        """Populate empty AgentState facts from existing context for older tasks."""
+        if agent.agent_state.facts:
+            return
+        context_handler = agent.context_manager
+        for _, entry in sorted(context_handler.context_timeline_dict.items())[-8:]:
+            if isinstance(entry, LLMContextCompacted):
+                text = entry.abstract_msg
+            elif isinstance(entry, LLMContext):
+                text = entry.content or " ".join(entry.tool_call_info or [])
+            else:
+                continue
+            summary = " ".join(str(text or "").split())
+            if not summary:
+                continue
+            if len(summary) > 240:
+                summary = f"{summary[:237]}..."
+            agent.agent_state.facts.append(summary)
+        agent.agent_state.facts = agent.agent_state.facts[-24:]
+
     def _base_system_prompt(self, task: CTFTask, workspace: Path) -> str:
         """Build the base system prompt for a CTF solving agent."""
-        return f"""You are ElfCTF's autonomous CTF solving agent.
-
-Work only inside this task workspace: {workspace}
-
-Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
-Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
-When you find a flag, save it to flag.txt, and then summarize how to proceed at proceed.md. Then reply "Finish." without tool call to finish.
-You can find some useful informmation in the archived context by fetching the original context by abstracts and tags.
-
-Task name: {task.config.name}
-Task type: {task.config.task_type.value}
-Target: {task.config.target or '(none)'}
-User prompt supplement:
-{task.config.system_prompt or '(none)'}
-"""
+        return build_ctf_system_prompt(
+            workspace=str(workspace),
+            task_name=task.config.name,
+            task_type=task.config.task_type.value,
+            target=task.config.target,
+            user_prompt_supplement=task.config.system_prompt,
+        )
 
     def _user_prompt(self, task: CTFTask, mode: str) -> str:
         """Build the user prompt sent to the agent for this workflow run."""
-        if mode == "retry":
-            mode = "start"
         file_lines = '\n'.join(f'- {file_info.name}: {file_info.path}' for file_info in task.config.files) or '- no files attached'
-        extra = f'\nAdditional user input:\n{task.pending_new_input}' if task.pending_new_input else ''
-        return f"""Mode: {mode}
-
-Solve this CTF task.
-
-Attached files:
-{file_lines}
-
-Target:
-{task.config.target or '(none)'}
-{extra}
-"""
+        return build_ctf_user_prompt(
+            mode=mode,
+            attached_files=file_lines,
+            target=task.config.target,
+            additional_input=task.pending_new_input,
+        )

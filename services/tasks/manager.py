@@ -9,10 +9,29 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional, TypeAlias
 
-from core.models import CTFTask, CTFTaskConfig, FileInfo, RuntimeConfig, TaskStatus, TaskType, safe_filename
+from core.models import (
+    CTFTask,
+    CTFTaskConfig,
+    FileInfo,
+    RuntimeConfig,
+    TaskStatus,
+    TaskType,
+    normalize_context_mode,
+    normalize_tool_names,
+    safe_filename,
+)
 
 
 TaskConfigUpdateValue: TypeAlias = str | int | List[str] | None
+
+
+def _default_external_tool_names() -> List[str]:
+    """Return the current registry's hotplug tool names when available."""
+    try:
+        from services.tools.hotplug import hotplug_manager
+    except Exception:
+        return []
+    return hotplug_manager.get_hotplug_tool_names()
 
 
 @dataclass
@@ -80,6 +99,7 @@ class TaskManager:
             workflow_kind=str(data.get('workflowKind', data.get('workflow_kind', 'solve'))),
             task_mode=str(data.get('taskMode', data.get('task_mode', 'classic'))),
             execution_mode=str(data.get('executionMode', data.get('execution_mode', 'single'))),
+            context_mode=normalize_context_mode(data.get('contextMode', data.get('context_mode', 'linear'))),
             learning_mode=str(data.get('learningMode', data.get('learning_mode', 'off'))),
             learning_search_rounds=int(data.get('learningSearchRounds', data.get('learning_search_rounds', 2))),
             learning_results_per_query=int(data.get('learningResultsPerQuery', data.get('learning_results_per_query', 5))),
@@ -87,6 +107,9 @@ class TaskManager:
             learning_max_chars_per_source=int(data.get('learningMaxCharsPerSource', data.get('learning_max_chars_per_source', 12000))),
             learning_focus_keywords=list(data.get('learningFocusKeywords', data.get('learning_focus_keywords', []))),
             learning_exclude_keywords=list(data.get('learningExcludeKeywords', data.get('learning_exclude_keywords', []))),
+            external_tool_names=normalize_tool_names(
+                data.get('externalToolNames', data.get('external_tool_names', _default_external_tool_names())),
+            ),
         )
 
         # Normalize persisted runtime artifacts so frontend detail views can consume them.
@@ -130,6 +153,8 @@ class TaskManager:
         """
         if not config.name.strip():
             return CreateTaskResult(False, error_message='任务名称不能为空')
+        config.context_mode = normalize_context_mode(config.context_mode)
+        config.external_tool_names = normalize_tool_names(config.external_tool_names)
         task_id = uuid.uuid4().hex
         workspace = self.tasks_dir / task_id / 'workspace'
         workspace.mkdir(parents=True, exist_ok=True)

@@ -14,6 +14,7 @@ DEFAULT_LEARNING_SEARCH_ROUNDS = 2
 DEFAULT_LEARNING_RESULTS_PER_QUERY = 5
 DEFAULT_LEARNING_MAX_SOURCES = 8
 DEFAULT_LEARNING_MAX_CHARS_PER_SOURCE = 12000
+DEFAULT_CONTEXT_MODE = 'linear'
 
 
 @dataclass
@@ -154,13 +155,15 @@ class CTFTaskConfig:
         workflow_kind: Workflow type, such as solve or scan.
         task_mode: Interaction mode selected by the UI.
         execution_mode: Single-agent or fan-out execution preference.
+        context_mode: Immutable context assembly mode selected at task creation.
         learning_mode: Knowledge learning behavior.
         learning_search_rounds: Search rounds for learning mode.
         learning_results_per_query: Search result count for learning mode.
         learning_max_sources: Maximum learning source count.
         learning_max_chars_per_source: Per-source character budget.
-        learning_focus_keywords: Keywords to emphasize during learning.
-        learning_exclude_keywords: Keywords to avoid during learning.
+    learning_focus_keywords: Keywords to emphasize during learning.
+    learning_exclude_keywords: Keywords to avoid during learning.
+    external_tool_names: Per-task hotplug tool whitelist loaded from the shared registry.
     """
 
     name: str
@@ -174,6 +177,7 @@ class CTFTaskConfig:
     workflow_kind: str = 'solve'
     task_mode: str = 'classic'
     execution_mode: str = 'single'
+    context_mode: str = DEFAULT_CONTEXT_MODE
     learning_mode: str = DEFAULT_LEARNING_MODE
     learning_search_rounds: int = DEFAULT_LEARNING_SEARCH_ROUNDS
     learning_results_per_query: int = DEFAULT_LEARNING_RESULTS_PER_QUERY
@@ -181,6 +185,7 @@ class CTFTaskConfig:
     learning_max_chars_per_source: int = DEFAULT_LEARNING_MAX_CHARS_PER_SOURCE
     learning_focus_keywords: List[str] = field(default_factory=list)
     learning_exclude_keywords: List[str] = field(default_factory=list)
+    external_tool_names: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -277,6 +282,7 @@ class CTFTask:
             'workflowKind': config.workflow_kind,
             'taskMode': config.task_mode,
             'executionMode': config.execution_mode,
+            'contextMode': config.context_mode,
             'learningMode': config.learning_mode,
             'learningSearchRounds': config.learning_search_rounds,
             'learningResultsPerQuery': config.learning_results_per_query,
@@ -284,6 +290,8 @@ class CTFTask:
             'learningMaxCharsPerSource': config.learning_max_chars_per_source,
             'learningFocusKeywords': list(config.learning_focus_keywords),
             'learningExcludeKeywords': list(config.learning_exclude_keywords),
+            'externalToolNames': list(config.external_tool_names),
+            'external_tool_names': list(config.external_tool_names),
             'status': self.status.value,
             'logs': list(self.logs),
             'result': self.result,
@@ -318,6 +326,47 @@ def normalize_learning_keywords(raw_keywords: Any) -> List[str]:
         if keyword and keyword not in normalized:
             normalized.append(keyword)
     return normalized
+
+
+def normalize_tool_names(raw_tool_names: Any) -> List[str]:
+    """Normalize external tool name selections.
+
+    Args:
+        raw_tool_names: List-like or comma-separated tool name input.
+
+    Returns:
+        A deduplicated list of non-empty tool names.
+    """
+    if isinstance(raw_tool_names, str):
+        items = raw_tool_names.split(',')
+    elif isinstance(raw_tool_names, list):
+        items = raw_tool_names
+    else:
+        items = []
+    normalized: List[str] = []
+    for item in items:
+        tool_name = str(item).strip()
+        if tool_name and tool_name not in normalized:
+            normalized.append(tool_name)
+    return normalized
+
+
+def normalize_context_mode(raw_mode: Any) -> str:
+    """Normalize task context assembly mode names.
+
+    Args:
+        raw_mode: User-supplied context mode.
+
+    Returns:
+        Either `linear` for traditional chronological context or `graph` for
+        the experimental retrieval/selection context path.
+    """
+    mode = str(raw_mode or '').strip().lower()
+    if mode in {'graph', 'graph_context', 'graph-context', 'experimental', 'experimental_graph'}:
+        return 'graph'
+    if mode in {'linear', 'linear_context', 'linear-context', 'classic'}:
+        return 'linear'
+    return DEFAULT_CONTEXT_MODE
 
 
 def normalize_learning_limits(

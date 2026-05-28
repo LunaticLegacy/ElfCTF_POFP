@@ -154,6 +154,8 @@ def get_tasks(request: Request) -> JSONResponse:
     services = get_services(request)
     user_id = get_request_user_id(request)
     tasks = services.task_manager.get_all_tasks(user_id=user_id)
+    for task in tasks:
+        services.workflow.get_agent_status(task.id)
     return api_response(True, data=[task.to_dict() for task in tasks])
 
 
@@ -193,6 +195,7 @@ async def create_task(request: Request) -> JSONResponse:
             task = result.task
             if uploaded_files:
                 task = services.task_manager.attach_uploaded_files(task.id, uploaded_files) or task
+            services.workflow.create_agent_for_task(task)
             return api_response(True, data=task.to_dict())
         except Exception as exc:
             services.task_manager.delete_task(result.task.id)
@@ -245,6 +248,7 @@ async def create_tasks_batch(request: Request) -> JSONResponse:
                 task = result.task
                 if uploaded_files:
                     task = services.task_manager.attach_uploaded_files(task.id, uploaded_files) or task
+                services.workflow.create_agent_for_task(task)
                 created_tasks.append(task.to_dict())
             except Exception as exc:
                 services.task_manager.delete_task(result.task.id)
@@ -442,6 +446,7 @@ def delete_task(request: Request, task_id: str) -> JSONResponse:
     task = services.task_manager.get_task(task_id, user_id=user_id)
     if task is not None and task.status == TaskStatus.RUNNING:
         services.workflow.stop_task(task_id)
+    services.workflow.discard_agent_for_task(task_id)
     success = services.task_manager.delete_task(task_id, user_id=user_id) if task else False
     if success:
         return api_response(True, code='task_deleted', message='任务已删除')
@@ -466,6 +471,18 @@ def get_task_logs(request: Request, task_id: str) -> JSONResponse:
     if task is None:
         return api_response(False, message='任务未找到', status_code=404)
     return api_response(True, data=task.logs)
+
+
+@tasks_router.get('/tasks/{task_id}/agent-status')
+def get_task_agent_status(request: Request, task_id: str) -> JSONResponse:
+    """Return the current durable Agent state for a task."""
+    services = get_services(request)
+    user_id = get_request_user_id(request)
+    task = services.task_manager.get_task(task_id, user_id=user_id)
+    if task is None:
+        return api_response(False, message='任务未找到', status_code=404)
+    status = services.workflow.get_agent_status(task_id)
+    return api_response(True, data=status or {})
 
 
 @tasks_router.put('/tasks/{task_id}')
