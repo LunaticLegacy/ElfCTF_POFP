@@ -262,17 +262,6 @@ def _resolve_backend_provider(connector_type: str) -> str:
     return 'openai'
 
 
-def _resolve_agent_tool_provider(backend_provider: str) -> str:
-    """Return the tool schema provider used by the agent loop.
-
-    LiteLLM exposes OpenAI-compatible tool calls in this project, so the
-    agent should serialize tools in OpenAI format even when the backend
-    request itself is routed through LiteLLM.
-    """
-    if backend_provider == 'anthropic':
-        return 'anthropic'
-    return 'openai'
-
 
 class CTFWorkflowService:
     """Start, continue, retry, and stop LLM-backed CTF task workflows."""
@@ -303,13 +292,22 @@ class CTFWorkflowService:
         self._agent_lock = threading.RLock()
 
     def create_agent_for_task(self, task: CTFTask) -> Agent:
-        """Create or load the durable Agent assigned to one task."""
+        """
+        Create or load the durable Agent assigned to one task.
+        对目标任务创建 Agent 实例。如果已有……
+        TODO: 光看这里的语义看不出来什么东西，还要继续向后看。
+        
+        Args:
+            task: 目标任务信息。
+        """
         with self._agent_lock:
-            agent = self._agents.get(task.id)
-            if agent is not None:
+            # 上锁，并尝试加载。
+            agent: Optional[Agent] = self._agents.get(task.id)  # 获取 agent
+            if agent is not None:   # 如果当前字典内有 agent 实例
                 self._publish_agent_status(task.id, agent)
                 return agent
-
+            
+            # 如果没有 agent 实例
             agent = self._load_agent_for_task(task)
             if agent is None:
                 agent = self._build_agent_for_task(task, RuntimeConfig())
@@ -457,8 +455,6 @@ class CTFWorkflowService:
 
         workspace = Path(task.workspace)
         workspace.mkdir(parents=True, exist_ok=True)
-        provider = _resolve_backend_provider(runtime_config.connector_type)
-        tool_provider = _resolve_agent_tool_provider(provider)
         classification = self._configure_agent_for_task(task, runtime_config)
         agent = self.create_agent_for_task(task)
         prompt = self._user_prompt(task, mode)
@@ -473,7 +469,7 @@ class CTFWorkflowService:
         self.task_manager.add_log(task_id, f'已加载技能: {", ".join(classification.skill_ids)}')
         self.task_manager.add_log(
             task_id,
-            f'LLM provider: {provider} · tool provider: {tool_provider} · connector: {runtime_config.connector_type}',
+            f'LLM provider: {_resolve_backend_provider(runtime_config.connector_type)} · connector: {runtime_config.connector_type}',
         )
 
         # Build the optional terminal mirror stream from runtime config without affecting task-log capture.
@@ -520,7 +516,6 @@ class CTFWorkflowService:
             llm_handler=fetcher,
             system_prompt=self._base_system_prompt(task, workspace),
             tools=[],
-            provider=_resolve_agent_tool_provider(provider),
             max_concurrent_tools=4,
             compression_profile=compression_profile,
             context_mode='graph' if task.config.context_mode == 'graph' else 'linear',
@@ -533,8 +528,8 @@ class CTFWorkflowService:
         agent = self.create_agent_for_task(task)
         workspace = Path(task.workspace)
         workspace.mkdir(parents=True, exist_ok=True)
+
         provider = _resolve_backend_provider(runtime_config.connector_type)
-        tool_provider = _resolve_agent_tool_provider(provider)
         fetcher = self._build_fetcher(runtime_config, provider)
         classification = self._classify_task(task)
         system_prompt = enrich_prompt_with_ctf_skills(
@@ -566,7 +561,6 @@ class CTFWorkflowService:
         agent.llm_handler = fetcher
         agent.llm_context_handler.llm_handler = fetcher
         agent.update_system_prompt(system_prompt)
-        agent.provider = tool_provider
         agent.context_mode = 'graph' if task.config.context_mode == 'graph' else 'linear'
         agent.llm_context_handler.configure_context_mode(
             agent.context_mode,
@@ -651,12 +645,24 @@ class CTFWorkflowService:
         return agent
 
     def _publish_agent_status(self, task_id: str, agent: Agent) -> None:
-        """Expose live Agent status through task artifacts for frontend polling."""
+        """
+        Expose live Agent status through task artifacts for frontend polling.
+        Args:
+            task_id: 任务 ID，通常是一组类似哈希的东西。
+            agent: Agent 实例。
+        """
         self.task_manager.set_task_artifact(task_id, 'context_snapshot', self._build_agent_context_snapshot(agent))
         self.task_manager.set_task_artifact(task_id, 'agent_status', self._build_agent_status_snapshot(task_id, agent))
 
-    def _serialize_agent(self, agent: Agent) -> Dict[str, Any]:
-        """Serialize an Agent's stable state without runtime-only tool callables."""
+    def _serialize_agent(
+        self, 
+        agent: Agent
+    ) -> Dict[str, Any]:    # ← 布什戈门，怎么又用 Any？
+        """
+        Serialize an Agent's stable state without runtime-only tool callables.
+        Args:
+            agent: 等待序列化的 Agent 实例。
+        """
         context_handler = agent.context_manager
         entries = []
         for context_id, entry in sorted(context_handler.context_timeline_dict.items()):
@@ -917,7 +923,7 @@ class CTFWorkflowService:
             'context_mode': agent.context_mode,
             'retrieval_enabled': context_handler.retrieval_enabled,
             'next_context_id': context_handler.now_context_id,
-            'tool_count': len(agent.tool_registry.schemas),
+            'tool_count': len(agent.tool_registry.tools),
             'persisted': state_file.is_file(),
             'state_file': str(state_file),
             'updated_at': time.time(),
