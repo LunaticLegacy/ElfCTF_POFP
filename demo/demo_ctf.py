@@ -10,12 +10,12 @@ import asyncio
 from re import I
 
 from modules.llmfetcher import (
-   Agent, LLMFetcher, AgentSwarm, create_shell_tools, create_ctf_tools, create_obscura_tools,
+   Agent, LLMFetcher, AgentSwarm, create_shell_tools,
 )
-from modules.llmfetcher.tools.ctf_tools import create_knowledge_tools
-from modules.rag.knowledge_base import KnowledgeBase
+from core.ctf_tools import create_ctf_tools, create_knowledge_tools
+from core.ctf_obscura_tools import create_obscura_tools
 
-from modules.llmfetcher.ctf_module import (
+from core.ctf_module import (
     classify_ctf_challenge, enrich_prompt_with_ctf_skills
 )
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from dataclasses import dataclass
 from typing import List, Optional, Protocol
 
-from modules.llmfetcher.ctf_module.ctf_skill_router import discover_ctf_skills
+from core.ctf_module.ctf_skill_router import discover_ctf_skills
 
 
 @dataclass

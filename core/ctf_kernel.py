@@ -12,10 +12,11 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 from core.json_types import JsonObject
-from modules.llmfetcher import Agent, LLMFetcher, create_ctf_tools, create_obscura_tools, create_shell_tools
+from modules.llmfetcher import Agent, LLMFetcher, create_shell_tools
 from modules.llmfetcher.llm_types import LLMBackendConfig, LLMOutput
-from modules.llmfetcher.tools.ctf_tools import create_knowledge_tools
-from modules.llmfetcher.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
+from core.ctf_tools import create_ctf_tools, create_knowledge_tools
+from core.ctf_obscura_tools import create_obscura_tools
+from core.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
 from services.tools.hotplug import hotplug_manager
 from modules.rag.knowledge_base import KnowledgeBase
 
