@@ -11,7 +11,7 @@ from services.tasks.manager import TaskManager
 
 
 class TaskContextModeTest(unittest.TestCase):
-    def test_context_mode_is_persisted_and_not_editable_after_creation(self) -> None:
+    def test_context_mode_stays_immutable_while_external_tools_remain_editable(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             manager = TaskManager(Path(tmpdir))
             result = manager.create_task(
@@ -39,12 +39,18 @@ class TaskContextModeTest(unittest.TestCase):
                 ['upx_section_fixer', 'vmpunpacker'],
             )
 
-            manager.update_task_config(task_id, user_id='user-a', context_mode='linear')
+            manager.update_task_config(
+                task_id,
+                user_id='user-a',
+                context_mode='linear',
+                external_tool_names=['vmpunpacker'],
+            )
             updated = manager.get_task(task_id, user_id='user-a')
             self.assertIsNotNone(updated)
             assert updated is not None
             self.assertEqual(updated.config.context_mode, 'graph')
-            self.assertEqual(updated.config.external_tool_names, ['upx_section_fixer', 'vmpunpacker'])
+            self.assertEqual(updated.config.external_tool_names, ['vmpunpacker'])
+            self.assertEqual(updated.to_dict()['externalToolNames'], ['vmpunpacker'])
 
 
 if __name__ == '__main__':

@@ -532,6 +532,7 @@ async def update_task(request: Request, task_id: str) -> JSONResponse:
         learning_max_chars_per_source=learning_limits['max_chars_per_source'] if learning_limits is not None else None,
         learning_focus_keywords=update_request.learning_focus_keywords,
         learning_exclude_keywords=update_request.learning_exclude_keywords,
+        external_tool_names=update_request.external_tool_names,
         user_id=user_id,
     )
     if updated_task is None:

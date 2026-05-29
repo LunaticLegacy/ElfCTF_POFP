@@ -909,6 +909,7 @@ function buildTaskDetailData(task) {
   const swarmRuns = normalizeTaskSwarmRuns(task.artifacts?.swarm_runs, knowledgeHarvestState);
   const autonomousWorkflow = normalizeTaskAutonomousWorkflow(task.artifacts?.autonomous_workflow);
   const agentStatus = normalizeTaskAgentStatus(task.artifacts?.agent_status, task.artifacts?.context_snapshot);
+  const tokenUsage = normalizeTaskTokenUsage(task.artifacts?.token_usage);
   const persistedContextSnapshot = agentStatus.context;
   const pendingNewInput = taskDetailNewInputDraftState.has(task.id)
     ? taskDetailNewInputDraftState.get(task.id)
@@ -959,6 +960,7 @@ function buildTaskDetailData(task) {
     autonomousWorkflow,
     knowledgeHarvestState,
     agentStatus,
+    tokenUsage,
     contextSnapshot,
     pendingNewInput,
     newInputFeedback,
@@ -1346,7 +1348,7 @@ function setTaskDetailOutputPage(taskId, nextIndex) {
 function resolveTaskDetailTab(taskId) {
   // Read the saved tab state and accept only tabs supported by the renderer.
   const savedTab = taskDetailTabState.get(taskId);
-  if (savedTab === 'llm' || savedTab === 'progress' || savedTab === 'context' || savedTab === 'learning' || savedTab === 'graph' || savedTab === 'swarm') {
+  if (savedTab === 'llm' || savedTab === 'progress' || savedTab === 'token' || savedTab === 'context' || savedTab === 'learning' || savedTab === 'graph' || savedTab === 'swarm') {
     return savedTab;
   }
 
@@ -1368,7 +1370,7 @@ function setTaskDetailTab(taskId, nextTab) {
   if (!task) return;
 
   // Normalize the requested tab so unsupported values snap back to progress.
-  const normalizedTab = ['progress', 'llm', 'context', 'learning', 'graph', 'swarm'].includes(nextTab) ? nextTab : 'progress';
+  const normalizedTab = ['progress', 'llm', 'token', 'context', 'learning', 'graph', 'swarm'].includes(nextTab) ? nextTab : 'progress';
   taskDetailTabState.set(taskId, normalizedTab);
 
   // Re-render the detail body so the newly selected tab becomes visible immediately.
@@ -2367,6 +2369,113 @@ function normalizeTaskAgentStatus(rawValue, fallbackContext) {
       contextLength: Number(rawStats.context_length ?? source.context_length ?? 0),
     },
   };
+}
+
+/**
+ * Normalize backend token usage artifacts for task-detail rendering.
+ *
+ * @param {Object} rawValue - Raw `task.artifacts.token_usage` payload.
+ * @returns {Object} Stable token usage view model with totals, groups, and calls.
+ */
+function normalizeTaskTokenUsage(rawValue) {
+  // Guard against missing artifacts so older tasks render an empty usage panel.
+  const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
+
+  // Normalize every known counter name into a finite number.
+  const normalizeCounters = value => {
+    const counters = value && typeof value === 'object' ? value : {};
+    const inputTokens = normalizeFiniteNumber(counters.input_tokens ?? counters.prompt_tokens);
+    const cachedTokens = normalizeFiniteNumber(counters.cached_tokens);
+    return {
+      inputTokens,
+      outputTokens: normalizeFiniteNumber(counters.output_tokens ?? counters.completion_tokens),
+      totalTokens: normalizeFiniteNumber(counters.total_tokens),
+      promptTokens: normalizeFiniteNumber(counters.prompt_tokens ?? counters.input_tokens),
+      completionTokens: normalizeFiniteNumber(counters.completion_tokens ?? counters.output_tokens),
+      cachedTokens,
+      reasoningTokens: normalizeFiniteNumber(counters.reasoning_tokens),
+      cacheHitRate: normalizePercentageValue(counters.cache_hit_rate, inputTokens, cachedTokens),
+    };
+  };
+
+  // Convert a grouped counter mapping into sorted display rows.
+  const normalizeGroup = value => {
+    const groups = value && typeof value === 'object' ? value : {};
+    return Object.entries(groups)
+      .map(([name, counters]) => ({
+        name: String(name || 'unknown'),
+        ...normalizeCounters(counters),
+      }))
+      .sort((left, right) => right.totalTokens - left.totalTokens || left.name.localeCompare(right.name));
+  };
+
+  // Normalize detailed call records while preserving raw provider usage for inspection.
+  const calls = Array.isArray(source.calls)
+    ? source.calls.map((call, index) => {
+        const usage = normalizeCounters(call?.usage);
+        return {
+          index: normalizeFiniteNumber(call?.index) || index + 1,
+          provider: String(call?.provider || 'unknown'),
+          backend: String(call?.backend || 'unknown'),
+          model: String(call?.model || 'unknown'),
+          promptPreview: String(call?.prompt_preview || ''),
+          usage,
+          rawUsage: call?.raw_usage && typeof call.raw_usage === 'object' ? call.raw_usage : {},
+          createdAt: normalizeFiniteNumber(call?.created_at),
+        };
+      })
+    : [];
+
+  // Fill total tokens from input/output aliases when the backend did not provide a total.
+  const totals = normalizeCounters(source.totals);
+  if (!totals.totalTokens && (totals.inputTokens || totals.outputTokens)) {
+    totals.totalTokens = totals.inputTokens + totals.outputTokens;
+  }
+
+  // Return one stable model consumed by both progress and detailed token tabs.
+  return {
+    totals,
+    byModel: normalizeGroup(source.by_model),
+    byBackend: normalizeGroup(source.by_backend),
+    calls,
+    callCount: normalizeFiniteNumber(source.call_count) || calls.length,
+    startedAt: normalizeFiniteNumber(source.started_at),
+    updatedAt: normalizeFiniteNumber(source.updated_at),
+  };
+}
+
+/**
+ * Normalize a loose numeric value into a non-negative finite number.
+ *
+ * @param {*} value - Raw value from backend JSON.
+ * @returns {number} Non-negative finite number, or zero.
+ */
+function normalizeFiniteNumber(value) {
+  // Convert numeric strings and reject NaN/Infinity before clamping.
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) ? Math.max(0, numberValue) : 0;
+}
+
+/**
+ * Normalize a cache hit rate into a percentage value.
+ *
+ * @param {*} rawValue - Backend percentage or fallback input.
+ * @param {number} inputTokens - Input token count used when deriving a fallback.
+ * @param {number} cachedTokens - Cached input token count used when deriving a fallback.
+ * @returns {number} Percentage in the inclusive range 0-100.
+ */
+function normalizePercentageValue(rawValue, inputTokens = 0, cachedTokens = 0) {
+  // Preserve backend percentages when they are already valid numbers.
+  const numericValue = Number(rawValue);
+  if (Number.isFinite(numericValue)) {
+    return Math.max(0, Math.min(100, numericValue));
+  }
+
+  // Derive the rate from cached input tokens when the backend omits the field.
+  if (inputTokens <= 0) {
+    return 0;
+  }
+  return Math.max(0, Math.min(100, (cachedTokens / inputTokens) * 100));
 }
 
 function renderTaskAgentStateSection(agentStatus) {
@@ -4667,6 +4776,163 @@ function renderTaskDetails(detailData) {
 }
 
 /**
+ * Format a token counter for compact task-detail display.
+ *
+ * @param {number} value - Raw token count.
+ * @returns {string} Locale-formatted token count.
+ */
+function formatTokenCount(value) {
+  // Normalize before formatting so missing provider counters render as zero.
+  const normalized = normalizeFiniteNumber(value);
+  return normalized.toLocaleString('zh-CN');
+}
+
+/**
+ * Format a percentage for token detail panels.
+ *
+ * @param {number} value - Percentage value, already normalized to 0-100.
+ * @returns {string} Percentage string with one decimal place.
+ */
+function formatPercentage(value) {
+  // Keep one decimal place so small cache-hit changes remain visible.
+  return `${normalizePercentageValue(value).toFixed(1)}%`;
+}
+
+/**
+ * Render one grouped token usage table.
+ *
+ * @param {string} title - Section title displayed above the rows.
+ * @param {Array} rows - Normalized grouped usage rows.
+ * @param {string} emptyText - Text shown when no rows exist.
+ * @returns {string} HTML string for the group section.
+ */
+function renderTaskTokenUsageGroup(title, rows, emptyText) {
+  // Render an explicit empty state for tasks that have not called an LLM yet.
+  if (!Array.isArray(rows) || !rows.length) {
+    return `
+      <section class="task-token-section">
+        <div class="task-thinking-section-title">${escapeHtml(title)}</div>
+        <div class="task-log-entry task-log-entry-empty">${escapeHtml(emptyText)}</div>
+      </section>
+    `;
+  }
+
+  // Render each group with the same counter columns used by per-call details.
+  const rowHtml = rows.map(row => `
+    <div class="task-token-row">
+      <div class="task-token-row-name">${escapeHtml(row.name)}</div>
+      <div>${escapeHtml(formatTokenCount(row.inputTokens))}</div>
+      <div>${escapeHtml(formatTokenCount(row.outputTokens))}</div>
+      <div>${escapeHtml(formatTokenCount(row.totalTokens))}</div>
+      <div>${escapeHtml(formatTokenCount(row.cachedTokens))}</div>
+      <div>${escapeHtml(formatTokenCount(row.reasoningTokens))}</div>
+      <div>${escapeHtml(formatPercentage(row.cacheHitRate))}</div>
+    </div>
+  `).join('');
+
+  // Return a labeled grid with a header row for readability in the modal.
+  return `
+    <section class="task-token-section">
+      <div class="task-thinking-section-title">${escapeHtml(title)}</div>
+      <div class="task-token-table">
+        <div class="task-token-row task-token-row-head">
+          <div>名称</div>
+          <div>输入</div>
+          <div>输出</div>
+          <div>总量</div>
+          <div>缓存</div>
+          <div>推理</div>
+          <div>命中率</div>
+        </div>
+        ${rowHtml}
+      </div>
+    </section>
+  `;
+}
+
+/**
+ * Render the token usage detail page for the task modal.
+ *
+ * @param {Object} task - Raw backend task snapshot.
+ * @param {Object} tokenUsage - Normalized usage model from `normalizeTaskTokenUsage`.
+ * @returns {string} HTML string for the token usage tab.
+ */
+function renderTaskTokenUsagePage(task, tokenUsage) {
+  // Normalize the totals once so the metrics and empty state agree.
+  const totals = tokenUsage?.totals || {};
+  const hasCalls = Boolean(tokenUsage?.callCount);
+  const tokenMetricsHtml = [
+    ['调用次数', String(tokenUsage?.callCount || 0)],
+    ['总 Token', formatTokenCount(totals.totalTokens)],
+    ['输入 Token', formatTokenCount(totals.inputTokens)],
+    ['输出 Token', formatTokenCount(totals.outputTokens)],
+    ['缓存 Token', formatTokenCount(totals.cachedTokens)],
+    ['推理 Token', formatTokenCount(totals.reasoningTokens)],
+    ['缓存命中率', formatPercentage(totals.cacheHitRate)],
+    ['开始记录', tokenUsage?.startedAt ? formatDateTime(tokenUsage.startedAt) : '未开始'],
+    ['最近更新', tokenUsage?.updatedAt ? formatDateTime(tokenUsage.updatedAt) : '未更新'],
+  ].map(([label, value]) => renderThinkingGraphMetric(label, value)).join('');
+
+  // Keep newest calls at the top while avoiding a giant modal for very long runs.
+  const recentCalls = Array.isArray(tokenUsage?.calls) ? tokenUsage.calls.slice(-40).reverse() : [];
+  const callRowsHtml = recentCalls.length
+    ? recentCalls.map(call => {
+        const usage = call.usage || {};
+        const rawUsageText = Object.keys(call.rawUsage || {}).length
+          ? JSON.stringify(call.rawUsage, null, 2)
+          : '{}';
+        return `
+          <details class="task-token-call">
+            <summary>
+              <span>#${escapeHtml(String(call.index))}</span>
+              <span>${escapeHtml(call.model)}</span>
+              <span>${escapeHtml(call.provider)} / ${escapeHtml(call.backend)}</span>
+              <span>${escapeHtml(formatTokenCount(usage.totalTokens))} total</span>
+            </summary>
+            <div class="task-token-call-body">
+              <div class="task-token-call-metrics">
+                ${renderThinkingGraphMetric('输入', formatTokenCount(usage.inputTokens))}
+                ${renderThinkingGraphMetric('输出', formatTokenCount(usage.outputTokens))}
+                ${renderThinkingGraphMetric('缓存', formatTokenCount(usage.cachedTokens))}
+                ${renderThinkingGraphMetric('推理', formatTokenCount(usage.reasoningTokens))}
+                ${renderThinkingGraphMetric('命中率', formatPercentage(usage.cacheHitRate))}
+              </div>
+              <div class="task-token-preview">${escapeHtml(call.promptPreview || '无 prompt 预览')}</div>
+              <pre class="task-token-raw">${escapeHtml(rawUsageText)}</pre>
+            </div>
+          </details>
+        `;
+      }).join('')
+    : '<div class="task-log-entry task-log-entry-empty">暂无 LLM token 用量记录。任务开始调用模型后会在这里出现明细。</div>';
+
+  // Compose the full page with totals, grouped aggregates, and recent call details.
+  return `
+    <div class="task-detail-page task-detail-page-compact">
+      <div class="task-detail-panel task-detail-panel-full">
+        <div class="task-detail-panel-header">
+          <div class="task-detail-panel-title">Token 用量</div>
+          <div style="font-size:11px;color:var(--text-3)">
+            ${hasCalls ? `展示 ${escapeHtml(String(tokenUsage.callCount))} 次非流式 LLM 调用` : '等待模型调用返回 usage'}
+          </div>
+        </div>
+        <div class="task-detail-panel-body task-token-usage-body" data-scroll-key="tokenUsage">
+          <section class="task-token-section">
+            <div class="task-thinking-section-title">总览</div>
+            <div class="task-thinking-metrics">${tokenMetricsHtml}</div>
+          </section>
+          ${renderTaskTokenUsageGroup('按模型', tokenUsage.byModel, '暂无模型维度 token 记录。')}
+          ${renderTaskTokenUsageGroup('按 Backend', tokenUsage.byBackend, '暂无 backend 维度 token 记录。')}
+          <section class="task-token-section">
+            <div class="task-thinking-section-title">调用明细</div>
+            <div class="task-token-call-list">${callRowsHtml}</div>
+          </section>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
  * Render the full task detail modal, including all tab pages and action areas.
  *
  * @param {Object} detailData - Normalized task detail model from `buildTaskDetailData`.
@@ -4688,6 +4954,7 @@ function renderTaskDetailModal(detailData) {
     autonomousWorkflow,
     knowledgeHarvestState,
     agentStatus,
+    tokenUsage,
     contextSnapshot,
     pendingNewInput,
     newInputFeedback,
@@ -4729,6 +4996,10 @@ function renderTaskDetailModal(detailData) {
     ? `${swarmSubagentAutoEnabled ? 'LLM 自动决定' : '固定建议值'} · ${task.swarmSubagentCountMin ?? '-'} / ${task.swarmSubagentCountSuggested ?? '-'} / ${task.swarmSubagentCountMax ?? '-'}`
     : '<span style="color:var(--text-muted)">仅 Swarm 模式显示</span>';
   const contextModeLabel = task.contextMode === 'graph' ? '图式上下文（实验性）' : '线性上下文';
+  const tokenTotals = tokenUsage.totals || {};
+  const tokenSummaryLabel = tokenUsage.callCount
+    ? `${formatTokenCount(tokenTotals.totalTokens)} total · ${formatTokenCount(tokenTotals.inputTokens)} in / ${formatTokenCount(tokenTotals.outputTokens)} out · 命中率 ${formatPercentage(tokenTotals.cacheHitRate)}`
+    : '暂无 token 记录';
 
   // 工程块元数据
   const metaItems = [
@@ -4754,6 +5025,7 @@ function renderTaskDetailModal(detailData) {
     ['Payload', payloadLabel],
     ['Skills', skillsLabel],
     ['外置工具', externalToolsLabel],
+    ['Token 用量', escapeHtml(tokenSummaryLabel)],
     ['工作空间', workspaceLabel],
     ['创建时间', formatDateTime(task.created_at)]
   ];
@@ -4802,6 +5074,13 @@ function renderTaskDetailModal(detailData) {
         onclick="setTaskDetailTab('${task.id}', 'llm')"
       >
         LLM 输出
+      </button>
+      <button
+        class="task-detail-tab ${effectiveActiveTab === 'token' ? 'active' : ''}"
+        type="button"
+        onclick="setTaskDetailTab('${task.id}', 'token')"
+      >
+        Token 用量
       </button>
       <button
         class="task-detail-tab ${effectiveActiveTab === 'context' ? 'active' : ''}"
@@ -4871,6 +5150,22 @@ function renderTaskDetailModal(detailData) {
               <div class="task-progress-info-item">
                 <div class="task-progress-info-label">类型</div>
                 <div class="task-progress-info-value">${escapeHtml(getTaskTypeLabel(task.type))}</div>
+              </div>
+              <div class="task-progress-info-item">
+                <div class="task-progress-info-label">Token 总量</div>
+                <div class="task-progress-info-value">${escapeHtml(formatTokenCount(tokenTotals.totalTokens))}</div>
+              </div>
+              <div class="task-progress-info-item">
+                <div class="task-progress-info-label">输入 / 输出</div>
+                <div class="task-progress-info-value">${escapeHtml(`${formatTokenCount(tokenTotals.inputTokens)} / ${formatTokenCount(tokenTotals.outputTokens)}`)}</div>
+              </div>
+              <div class="task-progress-info-item">
+                <div class="task-progress-info-label">缓存命中率</div>
+                <div class="task-progress-info-value">${escapeHtml(formatPercentage(tokenTotals.cacheHitRate))}</div>
+              </div>
+              <div class="task-progress-info-item">
+                <div class="task-progress-info-label">LLM 调用</div>
+                <div class="task-progress-info-value">${escapeHtml(String(tokenUsage.callCount || 0))}</div>
               </div>
             </div>
           </div>
@@ -4963,6 +5258,9 @@ function renderTaskDetailModal(detailData) {
       </div>
     </div>
   `;
+
+  // Render token accounting details from the backend usage artifact.
+  const tokenPageHtml = renderTaskTokenUsagePage(task, tokenUsage);
 
   // Render the structured context snapshot page from backend-persisted Agent state.
   const contextMetricsHtml = [
@@ -5457,6 +5755,8 @@ function renderTaskDetailModal(detailData) {
     ${tabsHtml}
     ${effectiveActiveTab === 'llm'
       ? llmPageHtml
+      : effectiveActiveTab === 'token'
+        ? tokenPageHtml
       : effectiveActiveTab === 'context'
         ? contextPageHtml
       : effectiveActiveTab === 'learning'

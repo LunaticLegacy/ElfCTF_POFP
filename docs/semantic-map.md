@@ -6,6 +6,8 @@
 | --- | --- | --- | --- |
 | `app.create_app` | function | `app` | Build the FastAPI application and attach the service container. |
 | `core.json_types` | module | `core.json_types` | Define shared recursive JSON-compatible aliases for API and service payloads. |
+| `core.ctf_kernel._TaskTokenUsageTracker` | class | `core.ctf_kernel` | Aggregate per-task LLM token usage into totals, grouping buckets, and detailed call records. |
+| `core.ctf_kernel._UsageTrackingFetcher` | class | `core.ctf_kernel` | Wrap a task fetcher and record successful non-streaming `LLMOutput.usage` payloads. |
 | `core.ctf_kernel.CTFWorkflowService` | class | `core.ctf_kernel` | Own per-task Agent lifecycles, persist Agent state/context, and orchestrate CTF solve, continue, retry, and stop workflows. |
 | `core.models.RuntimeConfig` | class | `core.models` | Store effective LLM runtime settings used by services and the CTF core. |
 | `core.models.CTFTask` | class | `core.models` | Represent persisted task state, logs, workspace, result, and editable config. |
@@ -52,7 +54,7 @@ The backend is split into three layers:
 
 - Responsibility: Normalize HTTP payloads into dataclasses consumed by services.
 - Response schema: `ApiEnvelope` is the shared dataclass response envelope; its `data` field is now typed as recursive `JsonValue | None` instead of an unconstrained object.
-- Task create requests now also carry the per-task external hotplug tool whitelist; update requests continue to exclude it so the selection stays immutable after creation.
+- Task create requests carry the per-task external hotplug tool whitelist, and task update requests now accept the same field so users can revise the selected hotplug tools after creation.
 - Calls: `core.json_types.JsonValue`, `core.models` normalization helpers, `services.config_handler.ConfigUpdatePayload`, `services.tasks.manager.UploadedTaskFile`.
 - Called by: API route handlers.
 
@@ -85,12 +87,14 @@ The backend is split into three layers:
 - Calls: `get_services`, `get_request_user_id`, `api_response`, `services.task_manager`, `services.workflow`, `CreateTaskRequest`, `CreateBatchTaskRequest`, `TaskUpdateRequest`.
 - Called by: `/api/tasks` list/create/update/start/stop/delete/logs/agent-status/detail endpoints and frontend task controls.
 - Agent lifecycle: task list and status reads refresh `artifacts.agent_status`; task creation routes call `workflow.create_agent_for_task` after attachments are stored; delete calls `workflow.discard_agent_for_task` before removing task files.
+- Task updates now include `external_tool_names`, which is persisted on the task config and exposed back to the edit form.
 
 ### `core.ctf_kernel`
 
 - Responsibility: Run CTF-solving workflows independently of HTTP.
 - Response/result schema: `WorkflowResult.details` uses `JsonObject | None` for structured API-safe metadata.
 - External dependencies: `modules.llmfetcher.Agent`, `LLMFetcher`, CTF tools, Obscura tools, shell tools, local CTF skill router, and knowledge base.
+- Runtime artifacts: publishes `agent_status`, `context_snapshot`, `pending_new_input`, `workspace_dir`, and live `token_usage` snapshots for task detail views.
 - Called by: `services.container.create_services` through the `workflow` field.
 
 ### `services.container`
@@ -108,6 +112,30 @@ The backend is split into three layers:
 
 ## Classes
 
+### `core.ctf_kernel._TaskTokenUsageTracker`
+
+- Responsibility: Normalize and aggregate token usage returned by task-scoped LLM calls.
+- Constructor parameters:
+  - `task_id`: Persisted task identifier receiving the `token_usage` artifact.
+  - `task_manager`: Persistence service used to write task artifacts.
+  - `initial_snapshot`: Optional previous artifact used when continuing a task.
+- Instance state: `totals`, `by_model`, `by_backend`, `calls`, `started_at`, `updated_at`.
+- Derived fields: recomputes `cache_hit_rate` for totals, model buckets, backend buckets, and per-call usage records using `cached_tokens / input_tokens * 100`.
+- Side effects: `record(...)` mutates aggregate counters and persists `task.artifacts.token_usage`.
+- Calls: `TaskManager.set_task_artifact`.
+- Called by: `_UsageTrackingFetcher.fetch`, `CTFWorkflowService._run_agent`.
+
+### `core.ctf_kernel._UsageTrackingFetcher`
+
+- Responsibility: Decorate a concrete `LLMFetcher` so successful non-streaming calls update per-task token usage.
+- Constructor parameters:
+  - `fetcher`: Real runtime fetcher that calls the provider.
+  - `tracker`: Per-task token usage tracker.
+- Instance state: wrapped fetcher and tracker.
+- Side effects: Persists token usage after each successful `fetch`.
+- Calls: `LLMFetcher.fetch`, `_TaskTokenUsageTracker.record`.
+- Called by: `CTFWorkflowService._build_fetcher`.
+
 ### `core.ctf_kernel.CTFWorkflowService`
 
 - Responsibility: Manage task workflow lifecycle, hold one durable LLM Agent per task, and launch solving in a background thread.
@@ -120,7 +148,7 @@ The backend is split into three layers:
   - `_stop_events`: Cooperative stop events keyed by task id.
   - `_agents`: Live task Agents keyed by task id.
   - `_agent_lock`: Re-entrant lock guarding live Agent registry changes.
-- Behavior pattern: Create or load one Agent for each task, publish `artifacts.agent_status`, validate runtime config, mark task running, spawn a worker, refresh the Agent with current tools/prompts, run with cooperative stop and flag detection, then persist completed, failed, or stopped state.
+- Behavior pattern: Create or load one Agent for each task, publish `artifacts.agent_status`, validate runtime config, mark task running, spawn a worker, refresh the Agent with current tools/prompts and a tracked fetcher, run with cooperative stop and flag detection, then persist completed, failed, stopped, and token-usage state.
 - Tool refresh now pulls built-in shell/CTF/knowledge tools plus only the hotplug runtime tools selected by the task config from manifests under the active data directory.
 - Base classes: `None`.
 - Known subclasses: `None observed`.
@@ -214,14 +242,14 @@ The backend is split into three layers:
   - `stop_event`: Cooperative cancellation flag.
   - `mode`: Workflow mode label.
 - Returns: `None`.
-- Side effects: Reads task files, initializes LLM clients, calls LLM backend, writes logs/result/status, writes `agent_state.json`, refreshes `context_snapshot` and `agent_status`, and stops early on cooperative cancellation or flag detection.
-- Calls: `_configure_agent_for_task`, `_persist_agent_for_task`, `_build_agent_context_snapshot`, `_build_agent_status_snapshot`, `Agent.run_agent_round`.
+- Side effects: Reads task files, initializes LLM clients, seeds and updates `token_usage`, calls LLM backend, writes logs/result/status, writes `agent_state.json`, refreshes `context_snapshot` and `agent_status`, and stops early on cooperative cancellation or flag detection.
+- Calls: `_TaskTokenUsageTracker`, `_configure_agent_for_task`, `_persist_agent_for_task`, `_build_agent_context_snapshot`, `_build_agent_status_snapshot`, `Agent.run_agent_round`.
 - Called by: `_run_worker`.
 
 #### `core.ctf_kernel.CTFWorkflowService._serialize_agent`
 
 - Signature: `_serialize_agent(self, agent: Agent) -> dict`
-- Purpose: Convert AgentState, active ids, memories, and context timeline entries into JSON-safe persistence.
+- Purpose: Convert the Agent state-machine snapshot, active ids, memories, and context timeline entries into JSON-safe persistence.
 - Parameters:
   - `agent`: Live Agent to serialize.
 - Returns: JSON-ready payload written to `agent_state.json`.
@@ -232,7 +260,7 @@ The backend is split into three layers:
 #### `core.ctf_kernel.CTFWorkflowService._restore_agent`
 
 - Signature: `_restore_agent(self, agent: Agent, payload: dict) -> None`
-- Purpose: Hydrate AgentState and context timeline from persisted JSON.
+- Purpose: Hydrate the Agent state-machine snapshot and context timeline from persisted JSON.
 - Parameters:
   - `agent`: Newly constructed Agent to hydrate.
   - `payload`: Decoded `agent_state.json`.
@@ -244,7 +272,7 @@ The backend is split into three layers:
 #### `core.ctf_kernel.CTFWorkflowService._backfill_agent_state_from_context`
 
 - Signature: `_backfill_agent_state_from_context(self, agent: Agent) -> None`
-- Purpose: Populate empty AgentState facts from recent raw or compacted context entries for tasks created before per-turn state recording existed.
+- Purpose: Populate empty AgentState facts from recent raw or compacted context entries for tasks created before the dedicated state-machine manager existed.
 - Parameters:
   - `agent`: Agent whose state may need display-time backfill.
 - Returns: `None`.

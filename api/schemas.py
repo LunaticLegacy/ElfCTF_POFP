@@ -745,6 +745,7 @@ class TaskUpdateRequest:
         learning_limits: Optional normalized learning limits dictionary.
         learning_focus_keywords: Optional normalized focus keywords.
         learning_exclude_keywords: Optional normalized exclude keywords.
+        external_tool_names: Optional hotplug tool whitelist update.
     """
 
     name: Optional[str] = None
@@ -760,6 +761,7 @@ class TaskUpdateRequest:
     learning_limits: Optional[Dict[str, int]] = None
     learning_focus_keywords: Optional[List[str]] = None
     learning_exclude_keywords: Optional[List[str]] = None
+    external_tool_names: Optional[List[str]] = None
 
     @classmethod
     def from_payload(cls, data: Optional[Dict[str, Any]]) -> 'TaskUpdateRequest':
@@ -810,6 +812,11 @@ class TaskUpdateRequest:
         skills = None
         if 'skills' in payload:
             skills = normalize_skill_list(payload.get('skills'))
+        external_tool_names = None
+        if 'externalToolNames' in payload or 'external_tool_names' in payload:
+            external_tool_names = normalize_tool_names(
+                payload.get('externalToolNames', payload.get('external_tool_names')),
+            )
         return cls(
             name=str(payload['name']).strip() if payload.get('name') else None,
             target=str(payload['target']).strip() if payload.get('target') else None,
@@ -832,6 +839,7 @@ class TaskUpdateRequest:
             learning_limits=learning_limits,
             learning_focus_keywords=learning_focus_keywords,
             learning_exclude_keywords=learning_exclude_keywords,
+            external_tool_names=external_tool_names,
         )
 
 

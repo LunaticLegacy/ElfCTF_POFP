@@ -26,13 +26,15 @@
 | `actions.createSingleTaskRequest` | function | `frontend/js/actions.js` | Sends one task create request as multipart form data. |
 | `actions.createTasksInBatch` | function | `frontend/js/actions.js` | Expands batch task definitions and submits them to the batch API. |
 | `actions.onTaskStartById` | function | `frontend/js/actions.js` | Starts a persisted task directly and surfaces backend error codes and hints when the launch fails. |
-| `actions.onEditTaskClick` | function | `frontend/js/actions.js` | Sends edited task metadata and workflow settings to the backend. |
+| `actions.onEditTaskClick` | function | `frontend/js/actions.js` | Sends edited task metadata, workflow settings, and external hotplug tool selections to the backend. |
 | `actions.onTaskDeleteClick` | function | `frontend/js/actions.js` | Deletes a task by id, closes the active detail modal when needed, and refreshes the task list after the backend confirms deletion. |
 | `tasks.refreshTasks` | function | `frontend/js/tasks.js` | Fetches task snapshots and renders or queues the update. |
 | `tasks.renderTasks` | function | `frontend/js/tasks.js` | Renders the task grid from sorted task data. |
 | `tasks.renderTaskCardSummaryBlocks` | function | `frontend/js/tasks.js` | Renders compact block summaries inside task-list cards. |
 | `tasks.renderTaskDetailModalForTask` | function | `frontend/js/tasks.js` | Renders the detail modal for one task while preserving useful local state. |
 | `tasks.normalizeTaskAgentStatus` | function | `frontend/js/tasks.js` | Normalizes backend `artifacts.agent_status` into AgentState, context, persistence, and metric data for the task detail modal. |
+| `tasks.normalizeTaskTokenUsage` | function | `frontend/js/tasks.js` | Normalizes backend `artifacts.token_usage` into totals, grouped counters, and call records for the task detail modal. |
+| `tasks.renderTaskTokenUsagePage` | function | `frontend/js/tasks.js` | Renders the task detail Token 用量 tab with totals, model/backend groups, and per-call raw usage. |
 | `tasks.renderTaskAgentStateSection` | function | `frontend/js/tasks.js` | Renders the Agent State panel inside the task detail modal. |
 | `tasks.normalizeTaskProgressValue` | function | `frontend/js/tasks.js` | Normalizes backend progress values for safe percentage display. |
 | `tasks.formatTaskFilesLabel` | function | `frontend/js/tasks.js` | Builds de-duplicated file labels for task detail surfaces. |
@@ -241,7 +243,7 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Parameters:
   - `taskId`: Task id to find in `latestTaskPayload`.
 - Returns: Promise resolving after skills are loaded and the modal is shown.
-- Side effects: Hydrates edit form controls, applies learning/swarm config, loads skill options, opens modal.
+- Side effects: Hydrates edit form controls, applies learning/swarm config, loads skill options, and restores the editable external hotplug tool selection before opening the modal.
 - Calls: `loadSkills`, `populateSkillsSelect`, `applyLearningConfig`, `applySwarmSubagentConfig`, `syncTaskWorkflowControls`, `onEditTaskModeChange`, `onEditTaskExecutionModeChange`.
 - Called by: Edit buttons rendered from `tasks.renderTaskActionButtons`.
 
@@ -297,8 +299,8 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Signature: `onEditTaskClick()`
 - Parameters: None; reads edit-task form controls from DOM.
 - Returns: Promise resolving after update attempt.
-- Side effects: Disables save button, sends PUT request, updates local task snapshot, closes modal, refreshes list.
-- Calls: `getInputValue`, `getLearningConfig`, `getSwarmSubagentConfig`, `getSelectedSkills`, `apiRequest`, `applyTaskUpdateLocally`, `closeEditTaskModal`, `refreshTasks`, `addLog`.
+- Side effects: Disables save button, sends PUT request, updates local task snapshot including external hotplug tool names, closes modal, refreshes list.
+- Calls: `getInputValue`, `getLearningConfig`, `getSwarmSubagentConfig`, `getSelectedSkills`, `getSelectedValues`, `apiRequest`, `applyTaskUpdateLocally`, `closeEditTaskModal`, `refreshTasks`, `addLog`.
 - Called by: `frontend/index.html` edit modal save button.
 
 ### `frontend/js/tasks.js`
@@ -307,7 +309,7 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Side effects: Mutates task-list/detail DOM, downloads text exports, manages refresh intervals, tracks active modal state and graph interaction state.
 - Important workflow groups:
   - List refresh: `fetchLatestTasksSnapshot`, `refreshTasks`, `refreshTasksWithButton`, `queueOrRenderTasks`, `renderTasks`.
-  - Detail modal: `openTaskDetailModal`, `renderTaskDetailModalForTask`, `buildTaskDetailData`, `renderTaskDetails`, `renderTaskDetailModal`.
+  - Detail modal: `openTaskDetailModal`, `renderTaskDetailModalForTask`, `buildTaskDetailData`, `renderTaskDetails`, `renderTaskDetailModal`, `normalizeTaskTokenUsage`, `renderTaskTokenUsagePage`.
   - Log panels: `openLogPanelModal`, `renderLogPanelContent`, `refreshOpenLogPanelModal`.
   - Thinking graph state: `normalizeTaskThinkingGraph`, `resolveTaskThinkingGraphPage`, `setTaskThinkingGraphPage`, `resolveTaskThinkingGraphZoom`, `setTaskThinkingGraphPan`, `openThinkingGraphModal`.
   - Thinking graph rendering: `buildThinkingGraphVisualModel`, `renderThinkingGraphVisualCompact`, `renderThinkingGraphVisual`, `renderThinkingGraphVisualNodeDetail`.
@@ -362,13 +364,35 @@ Task synchronization is pull-based, not push-based: `startTaskRefresh()` sets a 
 - Signature: `buildTaskDetailData(task)`
 - Parameters:
   - `task`: Backend task object.
-- Returns: Derived detail object containing logs, output collections, workflow artifacts, thinking graph, swarm runs, normalized progress, and display labels.
+- Returns: Derived detail object containing logs, output collections, workflow artifacts, thinking graph, swarm runs, token usage, normalized progress, and display labels.
 - Side effects: None expected; reads task shape and artifacts.
-- Calls: `collectFormalOutputs`, `normalizeTaskProgressValue`, `formatTaskFilesLabel`, `formatTaskSkillsHtml`, `normalizeTaskThinkingGraph`, `normalizeTaskSwarmRuns`, `normalizeTaskAutonomousWorkflow`, `resolveTaskFocus`, `normalizeTaskActionRuntime`, `getTaskTypeLabel`, `getTaskEffectiveSolverEngine`.
+- Calls: `collectFormalOutputs`, `normalizeTaskProgressValue`, `formatTaskFilesLabel`, `formatTaskSkillsHtml`, `normalizeTaskThinkingGraph`, `normalizeTaskSwarmRuns`, `normalizeTaskAutonomousWorkflow`, `normalizeTaskTokenUsage`, `resolveTaskFocus`, `normalizeTaskActionRuntime`, `getTaskTypeLabel`, `getTaskEffectiveSolverEngine`.
 - Called by: `renderTasks`, `renderTaskDetailModalForTask`, `renderLogPanelContent`, export helpers.
 - Notes: This code still assumes a nested `task.artifacts` payload for workflow state, while the backend task snapshot currently returns a flatter structure (`pendingNewInput`, `workspace`, `result`, `error`, etc.) directly on the task object. Those fields are therefore only partially populated unless the frontend maps them.
 - Notes: The visible `Agent Verbose` section is derived from `task.logs` via `splitEngineeringLogs()`; the frontend does not receive a separate backend verbose stream.
 - Notes: After the backend now mirrors agent stdout/stderr into task logs, this section can show actual live agent trace lines on the next polling refresh.
+
+#### `tasks.normalizeTaskTokenUsage`
+
+- Signature: `normalizeTaskTokenUsage(rawValue)`
+- Parameters:
+  - `rawValue`: Backend `task.artifacts.token_usage` payload.
+- Returns: Stable token usage model with `totals`, `byModel`, `byBackend`, `calls`, `callCount`, `startedAt`, and `updatedAt`.
+- Side effects: None.
+- Calls: `normalizeFiniteNumber`, `Object.entries`, `Array.map`, `Array.sort`.
+- Called by: `buildTaskDetailData`.
+- Notes: Accepts both `input_tokens/output_tokens` and `prompt_tokens/completion_tokens` aliases, preserves raw per-call usage for inspection, and derives `cacheHitRate` from backend data or cached/input tokens when the backend omits it.
+
+#### `tasks.renderTaskTokenUsagePage`
+
+- Signature: `renderTaskTokenUsagePage(task, tokenUsage)`
+- Parameters:
+  - `task`: Backend task snapshot used for tab context.
+  - `tokenUsage`: Normalized token usage model.
+- Returns: HTML string for the Token 用量 tab.
+- Side effects: None while building the string; generated `<details>` elements expand/collapse in the browser.
+- Calls: `formatTokenCount`, `renderThinkingGraphMetric`, `renderTaskTokenUsageGroup`, `escapeHtml`, `formatDateTime`.
+- Called by: `renderTaskDetailModal`.
 
 #### `tasks.syncLogEntries`
 
@@ -542,7 +566,7 @@ No JavaScript classes are declared in the frontend files inspected here. There i
 | `onCreateTaskClick` | `ensureAuthenticated`, `getInputValue`, `getLearningConfig`, `getSwarmSubagentConfig`, `getSelectedSkills`, `createTasksInBatch`, `createSingleTaskRequest`, `closeModal`, `refreshTasks`, `addLog` | Creates one or many tasks. |
 | `createSingleTaskRequest` | `buildTaskMultipartFormData`, `serializeTaskFile`, `multipartApiRequest` | Uploads single task payload and files. |
 | `createBatchTaskRequest` | `buildTaskMultipartFormData`, `collectUniqueTaskFiles`, `serializeTaskFile`, `multipartApiRequest` | Uploads batch payload and de-duplicated files. |
-| `onEditTaskClick` | `getInputValue`, `getLearningConfig`, `getSwarmSubagentConfig`, `getSelectedSkills`, `apiRequest`, `applyTaskUpdateLocally`, `closeEditTaskModal`, `refreshTasks`, `addLog` | Saves task edits. |
+| `onEditTaskClick` | `getInputValue`, `getLearningConfig`, `getSwarmSubagentConfig`, `getSelectedSkills`, `getSelectedValues`, `apiRequest`, `applyTaskUpdateLocally`, `closeEditTaskModal`, `refreshTasks`, `addLog` | Saves task edits, including external hotplug tool selections. |
 | `onTaskStartById` | `apiRequest`, `applyTaskUpdateLocally`, `startTaskRefresh`, `addLog` | Starts a task without opening the config modal gate and logs backend reason codes on failure. |
 | `onTaskContinueById` | `apiRequest`, `applyTaskUpdateLocally`, `startTaskRefresh`, `addLog` | Continues a task. |
 | `onTaskRetryById` | `apiRequest`, `applyTaskUpdateLocally`, `startTaskRefresh`, `addLog` | Retries a task after confirmation. |
@@ -571,7 +595,7 @@ No JavaScript classes are declared in the frontend files inspected here. There i
 | `GET /api/tasks` | `fetchLatestTasksSnapshot` | Load task snapshots. |
 | `POST /api/tasks` | `createSingleTaskRequest` | Create one task with optional files. |
 | `POST /api/tasks/batch` | `createBatchTaskRequest` | Create multiple tasks with optional shared files. |
-| `PUT /api/tasks/{task_id}` | `onEditTaskClick` | Update task metadata/config. |
+| `PUT /api/tasks/{task_id}` | `onEditTaskClick` | Update task metadata/config, including external hotplug tool selection. |
 | `DELETE /api/tasks/{task_id}` | `onTaskDeleteClick` | Delete a task. |
 | `POST /api/tasks/{task_id}/start` | `onTaskStartById` | Start task execution directly and return a machine-readable error code on failure. |
 | `POST /api/tasks/{task_id}/continue` | `onTaskContinueById` | Continue task execution. |

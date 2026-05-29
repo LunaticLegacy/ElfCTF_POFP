@@ -7,3 +7,6 @@ __pycache__
 
 # sk related
 ./load_sk.sh
+
+# something else
+.qwen

@@ -6,7 +6,7 @@
   <title>POFP CTF Agent</title>
   <link rel="stylesheet" href="css/style.css?v=20260521-verbose-model-fix">
   <link rel="stylesheet" href="css/agent.css?v=20260521-verbose-model-fix">
-  <link rel="stylesheet" href="css/tasks.css?v=20260521-verbose-model-fix">
+  <link rel="stylesheet" href="css/tasks.css?v=20260529-token-usage-detail">
   <link rel="stylesheet" href="css/config-modal.css?v=20260521-verbose-model-fix">
   <link rel="stylesheet" href="css/knowledge.css?v=20260521-verbose-model-fix">
 </head>
@@ -407,7 +407,7 @@
               <label>外置热插拔工具</label>
               <select class="form-input skill-select" id="taskExternalTools" multiple>
               </select>
-              <small style="color:var(--text-3);font-size:12px;">任务创建时选择，创建后不可更改</small>
+              <small style="color:var(--text-3);font-size:12px;">任务创建时选择，后续可在编辑中修改</small>
             </div>
           </section>
         </div>
@@ -588,9 +588,9 @@
             </div>
             <div class="form-group">
               <label>外置热插拔工具</label>
-              <select class="form-input skill-select" id="editTaskExternalTools" multiple disabled>
+              <select class="form-input skill-select" id="editTaskExternalTools" multiple>
               </select>
-              <small style="color:var(--text-3);font-size:12px;">创建后不可更改，仅用于查看当前配置</small>
+              <small style="color:var(--text-3);font-size:12px;">可在编辑任务时调整当前绑定的外置工具</small>
             </div>
           </section>
         </div>
@@ -722,7 +722,7 @@
   <script src="js/ui.js?v=20260521-verbose-model-fix" defer></script>
   <script src="js/cockpit.js?v=20260521-verbose-model-fix" defer></script>
   <script src="js/actions.js?v=20260521-verbose-model-fix" defer></script>
-  <script src="js/tasks.js?v=20260526-log-reset-fix" defer></script>
+  <script src="js/tasks.js?v=20260529-token-usage-detail" defer></script>
   <script src="js/bootstrap.js?v=20260521-verbose-model-fix" defer></script>
 </body>
 </html>

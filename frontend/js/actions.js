@@ -842,6 +842,7 @@ async function onEditTaskClick() {
   const learningConfig = getLearningConfig('editTask');
   const swarmSubagentConfig = getSwarmSubagentConfig('editTask');
   const skills = getSelectedSkills('editTaskSkills');
+  const externalToolNames = getSelectedValues('editTaskExternalTools');
   const submitBtn = document.getElementById('editTaskSubmitBtn');
   const originalButtonText = submitBtn?.textContent || '保存修改';
 
@@ -873,6 +874,7 @@ async function onEditTaskClick() {
         learningMaxCharsPerSource: learningConfig.maxCharsPerSource,
         learningFocusKeywords: learningConfig.focusKeywords,
         learningExcludeKeywords: learningConfig.excludeKeywords,
+        externalToolNames,
         swarmSubagentAutoCount: swarmSubagentConfig.autoCount,
         swarmSubagentCountMin: swarmSubagentConfig.min,
         swarmSubagentCountMax: swarmSubagentConfig.max,

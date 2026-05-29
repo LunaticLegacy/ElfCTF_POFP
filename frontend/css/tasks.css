@@ -364,6 +364,118 @@
   letter-spacing: 0.02em;
 }
 
+.task-token-usage-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.task-token-section {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: linear-gradient(180deg, rgba(74, 222, 128, 0.05), rgba(17, 24, 39, 0.18));
+}
+
+.task-token-table {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.task-token-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.8fr) repeat(6, minmax(68px, 1fr));
+  gap: 8px;
+  align-items: center;
+  padding: 9px 10px;
+  border-top: 1px solid var(--border);
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.task-token-row:first-child {
+  border-top: none;
+}
+
+.task-token-row-head {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--surface-2);
+}
+
+.task-token-row-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.task-token-call-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.task-token-call {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+}
+
+.task-token-call summary {
+  display: grid;
+  grid-template-columns: 52px minmax(120px, 1fr) minmax(120px, 1fr) minmax(90px, auto);
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  color: var(--text-2);
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  cursor: pointer;
+}
+
+.task-token-call-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.task-token-call-metrics {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.task-token-preview,
+.task-token-raw {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.task-token-raw {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  font-family: 'JetBrains Mono', monospace;
+}
+
 .task-thinking-metrics {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -835,6 +947,12 @@
 
   .task-progress-info-item.wide {
     grid-column: auto;
+  }
+
+  .task-token-row,
+  .task-token-call summary,
+  .task-token-call-metrics {
+    grid-template-columns: 1fr;
   }
 
   .task-detail-tabs {

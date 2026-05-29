@@ -322,11 +322,15 @@ class TaskManager:
             'learning_max_chars_per_source': 'learning_max_chars_per_source',
             'learning_focus_keywords': 'learning_focus_keywords',
             'learning_exclude_keywords': 'learning_exclude_keywords',
+            'external_tool_names': 'external_tool_names',
         }
         for key, attr in mapping.items():
             value = updates.get(key)
             if value is not None:
-                setattr(task.config, attr, value)
+                if attr == 'external_tool_names':
+                    setattr(task.config, attr, normalize_tool_names(value))
+                else:
+                    setattr(task.config, attr, value)
         task.add_log('任务配置已更新')
         self._persist_task(task)
         return task
