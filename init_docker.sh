@@ -1,5 +1,5 @@
 docker run -it \
-  --name pofpctf-sandbox-2 \
+  --name pofpctf-sandbox-3 \
   -v "$PWD":/challenge \
   -w /challenge \
   -p 8000:8000 \

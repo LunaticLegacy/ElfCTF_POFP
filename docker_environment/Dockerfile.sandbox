@@ -13,9 +13,9 @@ RUN apt-get update && apt-get install -y \
     # Binary analysis
     binutils file xxd bsdmainutils binwalk \
     gdb ltrace strace \
-    upx \
+    upx-ucl \
     # Forensics / steg / image analysis
-    exiftool steghide \
+    libimage-exiftool-perl steghide \
     pngcheck imagemagick \
     # Filesystem forensics
     xfsprogs sleuthkit foremost dcfldd testdisk \
@@ -43,6 +43,25 @@ RUN apt-get update && apt-get install -y \
     sagemath \
     # CADO-NFS build deps
     libhwloc-dev libbz2-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── Python 3.14 (deadsnakes PPA) ──────────────────────────────────────────────
+RUN apt-get update && apt-get install -y software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y python3.14 python3.14-venv python3.14-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── stegdetect (build from source; not packaged in Ubuntu 22.04) ─────────────
+RUN apt-get update && apt-get install -y libjpeg-dev \
+    && curl -L https://github.com/abeluck/stegdetect/archive/refs/heads/master.tar.gz -o /tmp/stegdetect.tar.gz \
+    && tar -xzf /tmp/stegdetect.tar.gz -C /tmp \
+    && mv /tmp/stegdetect-master /tmp/stegdetect \
+    && cd /tmp/stegdetect \
+    && ./configure --prefix=/usr \
+    && make -j$(nproc) \
+    && make install \
+    && rm -rf /tmp/stegdetect /tmp/stegdetect.tar.gz \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Podman (nested containers — run challenge Docker images inside sandbox) ───
@@ -89,9 +108,10 @@ RUN apt-get update && apt-get install -y libmhash-dev libmcrypt-dev libjpeg-dev 
     && cmake --build /tmp/stegseek/build --target install \
     && rm -rf /tmp/stegseek
 
-# ── Python CTF libraries (system python3) ────────────────────────────────────
-RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel
-RUN pip3 install --no-cache-dir \
+# ── Python CTF libraries (Python 3.14) ───────────────────────────────────────
+RUN python3.14 -m ensurepip --upgrade \
+    && python3.14 -m pip install --no-cache-dir --upgrade pip setuptools wheel
+RUN python3.14 -m pip install --no-cache-dir \
     pwntools \
     pycryptodome \
     sympy \
@@ -110,12 +130,14 @@ RUN pip3 install --no-cache-dir \
     flask \
     volatility3 \
     PyJWT \
-    pyghidra
+    pyghidra \
+    stegano \
+    numpy
 
 # ── PyTorch (CPU-only) + Keras ────────────────────────────────────────────────
-RUN pip3 install --no-cache-dir --ignore-installed sympy \
+RUN python3.14 -m pip install --no-cache-dir --ignore-installed sympy \
     torch --index-url https://download.pytorch.org/whl/cpu \
-    && pip3 install --no-cache-dir keras
+    && python3.14 -m pip install --no-cache-dir keras
 
 # ── RsaCtfTool (catch-all automated RSA/factoring attacks) ────────────────────
 RUN for i in 1 2 3 4 5; do \
@@ -125,7 +147,7 @@ RUN for i in 1 2 3 4 5; do \
         sleep 5; \
     done \
     && test -d /opt/RsaCtfTool/.git \
-    && pip3 install --no-cache-dir /opt/RsaCtfTool
+    && python3.14 -m pip install --no-cache-dir /opt/RsaCtfTool
 
 # ── CADO-NFS (Number Field Sieve — large integer factoring + DLP) ─────────────
 RUN git clone --depth=1 https://gitlab.inria.fr/cado-nfs/cado-nfs.git /opt/cado-nfs \
@@ -141,16 +163,21 @@ exec python3 /opt/cado-nfs/cado-nfs.py "$@"\n' > /usr/local/bin/cado-nfs \
     && chmod +x /usr/local/bin/cado-nfs
 
 # ── Install the runtime lib for POFP ──────
-RUN pip3 install --no-cache-dir \
-    flask \
-    flask_cors \
+RUN python3.14 -m pip install --no-cache-dir \
+    fastapi \
+    fastapi-utils \
+    uvicorn \
     anthropic \
     openai \
     litellm \
     chromadb \
     sentence-transformers \
     mcp \
-    r2pipe
+    r2pipe \
+    Pillow \
+    numpy \
+    stegano \
+    tqdm
 
 COPY ./docker_environment/sandbox-tools.txt /tools.txt
 

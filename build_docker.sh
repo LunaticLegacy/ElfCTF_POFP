@@ -1,1 +1,1 @@
-docker build -f ./docker_environment/Dockerfile.sandbox -t pofpctf-sandbox ./
+docker build -f ./docker_environment/Dockerfile.sandbox -t pofpctf-sandbox-v3 ./

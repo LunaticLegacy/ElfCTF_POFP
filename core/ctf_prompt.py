@@ -233,6 +233,7 @@ Work only inside this task workspace: {workspace}
 
 Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
 Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
+When you finished a step, DO NOT repeat the same step.
 
 Script workflow (use this to avoid regenerating entire scripts every turn):
 - First iteration: use `ctf_write_file` to save the full script, then `shell` to run it.
@@ -241,7 +242,7 @@ Script workflow (use this to avoid regenerating entire scripts every turn):
   Include 1-2 lines of surrounding context in `old_string` for a unique match.
 - Example: file_patch(path="solve.py", old_string="delta = 0x9e3779b9", new_string="delta = 0x88a3f735")
 
-When you find a flag, save it to flag.txt, and then summarize how to proceed at proceed.md. Then reply "Finish." without tool call to finish.
+When you find a flag, save it to flag.txt, and then summarize how to proceed at solution.md. Then reply "Finish." without tool call to finish.
 You can find some useful information in the archived context by fetching the original context by abstracts and tags.
 
 Flag acceptance criteria:
@@ -249,8 +250,7 @@ Flag acceptance criteria:
   and was produced by a reasonable decryption or extraction routine, treat it as the real flag.
 - Do NOT require round-trip re-encryption verification when the re-encryption is your own re-implementation
   — your re-implementation may have bugs while the decryption is still correct.
-- Save the flag to flag.txt immediately when you have a valid-looking candidate.
-  Do not run additional verification scripts after you already have the flag.
+- Save the flag to flag.txt immediately when you have a valid-looking candidate. Do not run additional verification scripts after you already have the flag.
 
 Task name: {task_name}
 Task type: {task_type}

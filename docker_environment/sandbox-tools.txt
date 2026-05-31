@@ -27,6 +27,7 @@ radare2            Reverse engineering. r2 binary, then aaa; pdf @main; afl
 == STEGANOGRAPHY ==
 steghide           Embed/extract in JPEG/BMP/WAV. steghide extract -sf file.jpg
 stegseek           Brute-force steghide passwords. stegseek file.jpg wordlist.txt
+stegdetect         JPEG steg heuristic detection. stegdetect -t o image.jpg
 zsteg              PNG/BMP steg detector. zsteg file.png (tries LSB, bit planes, etc.)
 exiftool           EXIF/metadata reader. exiftool file.jpg
 pngcheck           PNG structure checker. pngcheck -v file.png

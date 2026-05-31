@@ -13,6 +13,7 @@ from typing import Any, Dict, Optional, Literal
 
 from core.json_types import JsonObject
 from modules.llmfetcher import Agent, LLMFetcher, create_shell_tools
+from modules.llmfetcher.tools.workflow_tool import create_workflow_tool
 from modules.llmfetcher.llm_types import LLMBackendConfig, LLMOutput
 from core.ctf_tools import create_ctf_tools, create_knowledge_tools
 from core.ctf_obscura_tools import create_obscura_tools
@@ -378,6 +379,11 @@ class CTFWorkflowService:
         agent._register_builtin_tools()
         for tool in tools:
             agent.add_tool(tool)
+
+        # Register the workflow orchestrator — lets the agent compose
+        # multi-stage DAGs instead of inlining everything in shell.
+        for wt in create_workflow_tool(agent):
+            agent.add_tool(wt)
 
         if missing_external_tool_names:
             self.task_manager.add_log(

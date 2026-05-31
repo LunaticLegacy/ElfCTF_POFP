@@ -25,3 +25,9 @@ mcp>=1.10.0
 r2pipe==1.9.8
 cryptography
 requests
+
+# CTF hotplug tools (optional — for CTFToolkit.py and zip_bruteforce.py)
+Pillow
+numpy
+stegano
+tqdm
