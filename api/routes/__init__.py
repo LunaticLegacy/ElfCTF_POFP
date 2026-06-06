@@ -6,6 +6,7 @@ from .. import (
     auth_router,
     background_router,
     config_router,
+    gzctf_router,
     knowledge_router,
     mcp_router,
     models_router,
@@ -15,7 +16,7 @@ from .. import (
 )
 
 # Import route modules after router creation so decorators can bind endpoints.
-from . import auth, background, config, knowledge, mcp, models, skills, tasks, temp_mcp, tools, user_mcp
+from . import auth, background, config, gzctf, knowledge, mcp, models, skills, tasks, temp_mcp, tools, user_mcp
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
@@ -27,6 +28,7 @@ api_router.include_router(tools_router)
 api_router.include_router(skills_router)
 api_router.include_router(knowledge_router)
 api_router.include_router(background_router)
+api_router.include_router(gzctf_router)
 
 __all__ = [
     'api_router',
@@ -39,4 +41,5 @@ __all__ = [
     'skills_router',
     'knowledge_router',
     'background_router',
+    'gzctf_router',
 ]

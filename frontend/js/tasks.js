@@ -1,3 +1,176 @@
+let gzctfAutomationRuns = [];
+let gzctfAutomationRefreshTimer = null;
+
+function openGzctfAutomationModal() {
+  if (!ensureAuthenticated()) return;
+  const modal = document.getElementById('gzctfAutomationModal');
+  if (!modal) return;
+  pauseTaskRefresh();
+  const gameUrlInput = document.getElementById('gzctfAutomationGameUrl');
+  const usernameInput = document.getElementById('gzctfAutomationUsername');
+  const passwordInput = document.getElementById('gzctfAutomationPassword');
+  const maxConcurrentInput = document.getElementById('gzctfAutomationMaxConcurrent');
+  if (gameUrlInput) gameUrlInput.value = getInputValue('gzctfGameUrl').trim();
+  if (usernameInput) usernameInput.value = getInputValue('gzctfUsername').trim();
+  if (passwordInput) passwordInput.value = getInputValue('gzctfPassword');
+  if (maxConcurrentInput && !maxConcurrentInput.value) maxConcurrentInput.value = '3';
+  modal.classList.add('show');
+  loadGzctfAutomationRuns();
+  if (gzctfAutomationRefreshTimer) {
+    clearInterval(gzctfAutomationRefreshTimer);
+  }
+  gzctfAutomationRefreshTimer = window.setInterval(loadGzctfAutomationRuns, 4000);
+}
+
+function closeGzctfAutomationModal(event) {
+  const modal = document.getElementById('gzctfAutomationModal');
+  if (!modal) return;
+  if (event && event.target !== modal) return;
+  modal.classList.remove('show');
+  if (gzctfAutomationRefreshTimer) {
+    clearInterval(gzctfAutomationRefreshTimer);
+    gzctfAutomationRefreshTimer = null;
+  }
+  resumeTaskRefresh();
+}
+
+async function loadGzctfAutomationRuns() {
+  const listEl = document.getElementById('gzctfAutomationRuns');
+  if (!listEl || !document.getElementById('gzctfAutomationModal')?.classList.contains('show')) {
+    return;
+  }
+  const result = await apiRequest(`${API_BASE}/gzctf/automation/runs`);
+  if (!result.success || !Array.isArray(result.data)) {
+    listEl.innerHTML = `<div class="task-log-entry task-log-entry-empty">加载运行列表失败：${escapeHtml(result.message || '未知错误')}</div>`;
+    return;
+  }
+  gzctfAutomationRuns = result.data;
+  renderGzctfAutomationRuns();
+}
+
+function renderGzctfAutomationRuns() {
+  const listEl = document.getElementById('gzctfAutomationRuns');
+  if (!listEl) return;
+  if (!gzctfAutomationRuns.length) {
+    listEl.innerHTML = '<div class="task-log-entry task-log-entry-empty">还没有自动化运行记录。</div>';
+    return;
+  }
+  listEl.innerHTML = gzctfAutomationRuns.map(run => {
+    const challenges = Array.isArray(run.challenges) ? run.challenges : [];
+    const canCancel = ['queued', 'running', 'launched', 'cancelling'].includes(String(run.status || '').toLowerCase());
+    const challengeHtml = challenges.length
+      ? challenges.slice(0, 24).map(item => `
+          <div class="gzctf-run-challenge">
+            <div class="gzctf-run-challenge-title">${escapeHtml(item.title || 'untitled')}</div>
+            <div class="gzctf-run-challenge-meta">
+              <span>${escapeHtml(item.category || 'unknown')}</span>
+              <span>${escapeHtml(item.status || 'queued')}</span>
+              <span>${escapeHtml(item.taskStatus || '-')}</span>
+              <span>${escapeHtml(item.verdict || '-')}</span>
+            </div>
+            ${(item.target || item.connectionHint) ? `
+              <div class="gzctf-run-challenge-extra">
+                ${item.target ? `<div>Target: ${escapeHtml(item.target)}</div>` : ''}
+                ${item.connectionHint ? `<div>Hint: ${escapeHtml(item.connectionHint)}</div>` : ''}
+              </div>
+            ` : ''}
+          </div>
+        `).join('')
+      : '<div class="task-log-entry task-log-entry-empty">当前没有题目条目。</div>';
+    return `
+      <article class="gzctf-run-card">
+        <div class="gzctf-run-head">
+          <div>
+            <div class="gzctf-run-title">${escapeHtml(run.gameUrl || 'GZCTF')}</div>
+            <div class="gzctf-run-subtitle">${escapeHtml(run.username || '')} · ${escapeHtml(formatDateTime(run.created_at) || '')}</div>
+          </div>
+          <div class="gzctf-run-head-actions">
+            <div class="gzctf-run-status">${escapeHtml(run.status || 'unknown')}</div>
+            ${canCancel ? `<button class="mbtn mbtn-s gzctf-run-cancel-btn" type="button" onclick="cancelGzctfAutomationRun('${escapeHtml(run.id || '')}', this)">取消</button>` : ''}
+          </div>
+        </div>
+        <div class="gzctf-run-metrics">
+          <span>题目 ${escapeHtml(String(run.totalChallenges ?? 0))}</span>
+          <span>并发 ${escapeHtml(String(run.maxConcurrentTasks ?? 0))}</span>
+          <span>已启动 ${escapeHtml(String(run.startedTasks ?? 0))}</span>
+          <span>Pending ${escapeHtml(String(run.pendingTasks ?? 0))}</span>
+          <span>Running ${escapeHtml(String(run.runningTasks ?? 0))}</span>
+          <span>完成 ${escapeHtml(String(run.completedTasks ?? 0))}</span>
+          <span>取消 ${escapeHtml(String(run.cancelledTasks ?? 0))}</span>
+          <span>Accepted ${escapeHtml(String(run.acceptedFlags ?? 0))}</span>
+        </div>
+        <div class="gzctf-run-message">${escapeHtml(run.message || '')}</div>
+        <div class="gzctf-run-challenges">${challengeHtml}</div>
+      </article>
+    `;
+  }).join('');
+}
+
+async function onStartGzctfAutomationClick(triggerBtn) {
+  if (!ensureAuthenticated()) return;
+  if (!hasUsableApiConfig()) {
+    addLog('err', '❌ 当前用户没有可用的 LLM API 配置，请先保存设置');
+    openConfigModal();
+    return;
+  }
+  const btn = triggerBtn || event?.target;
+  const originalText = btn?.textContent || '启动自动化';
+  const payload = {
+    game_url: getInputValue('gzctfAutomationGameUrl').trim(),
+    username: getInputValue('gzctfAutomationUsername').trim(),
+    password: getInputValue('gzctfAutomationPassword'),
+    challenge_limit: Number(getInputValue('gzctfAutomationChallengeLimit', '0')) || 0,
+    max_concurrent_tasks: Math.max(1, Number(getInputValue('gzctfAutomationMaxConcurrent', '3')) || 3),
+  };
+  if (!payload.game_url || !payload.username) {
+    addLog('err', '❌ 请至少填写比赛链接和账号；密码留空时会优先复用已保存配置');
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '启动中...';
+  }
+  const result = await apiRequest(`${API_BASE}/gzctf/automation/start`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+  if (result.success) {
+    addLog('ok', 'GZCTF 自动化已启动，正在批量建题');
+    await loadGzctfAutomationRuns();
+    refreshTasks();
+  } else {
+    addLog('err', `GZCTF 自动化启动失败: ${result.message}`);
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
+async function cancelGzctfAutomationRun(runId, triggerBtn) {
+  if (!runId) return;
+  const btn = triggerBtn || event?.target;
+  const originalText = btn?.textContent || '取消';
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '取消中...';
+  }
+  const result = await apiRequest(`${API_BASE}/gzctf/automation/runs/${encodeURIComponent(runId)}/cancel`, {
+    method: 'POST',
+  });
+  if (result.success) {
+    addLog('ok', '已请求取消 GZCTF 自动化运行');
+    await loadGzctfAutomationRuns();
+    refreshTasks();
+  } else {
+    addLog('err', `取消 GZCTF 自动化失败: ${result.message}`);
+  }
+  if (btn) {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
+}
+
 // 任务排序状态
 let taskSortState = {
   by: 'updated_at',  // 'updated_at' | 'created_at' | 'name'
@@ -191,9 +364,14 @@ async function refreshActiveSwarmRunModal() {
  * 根据当前交互状态决定立即渲染还是暂存任务数据。
  */
 function queueOrRenderTasks(tasks) {
-  // 如果刷新被暂停，先暂存数据，不更新全局状态和浮窗
+  // 如果刷新被暂停，仍然把最新快照推给已打开的浮窗，
+  // 但不要重绘任务列表，避免打断用户正在进行的交互。
   if (isTaskRefreshPaused) {
     queuedTaskPayload = tasks;
+    refreshOpenTaskDetailModal(tasks);
+    refreshOpenLogPanelModal(tasks);
+    refreshOpenThinkingGraphModal(tasks);
+    refreshOpenSwarmRunModal(tasks);
     return;
   }
 
@@ -204,6 +382,7 @@ function queueOrRenderTasks(tasks) {
   refreshOpenTaskDetailModal(tasks);
   refreshOpenLogPanelModal(tasks);
   refreshOpenThinkingGraphModal(tasks);
+  refreshOpenSwarmRunModal(tasks);
 
   if (snapshot === lastRenderedTaskSnapshot) {
     return;

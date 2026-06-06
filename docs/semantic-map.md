@@ -9,12 +9,14 @@
 | `core.ctf_kernel._TaskTokenUsageTracker` | class | `core.ctf_kernel` | Aggregate per-task LLM token usage into totals, grouping buckets, and detailed call records. |
 | `core.ctf_kernel._UsageTrackingFetcher` | class | `core.ctf_kernel` | Wrap a task fetcher and record successful non-streaming `LLMOutput.usage` payloads. |
 | `core.ctf_kernel.CTFWorkflowService` | class | `core.ctf_kernel` | Own per-task Agent lifecycles, persist Agent state/context, and orchestrate CTF solve, continue, retry, and stop workflows. |
+| `core.gzctf.module.GZCTFAutomationService` | class | `core.gzctf.module.automation` | Log into one GZCTF game, enumerate challenge cards, create per-challenge solve tasks, attach downloaded files, and launch the existing workflow automatically. |
 | `core.models.RuntimeConfig` | class | `core.models` | Store effective LLM runtime settings used by services and the CTF core. |
 | `core.models.CTFTask` | class | `core.models` | Represent persisted task state, logs, workspace, result, and editable config. |
 | `services.container.create_services` | function | `services.container` | Wire storage, auth, task, workflow, knowledge, tool, and background services. |
 | `services.tasks.manager.TaskManager` | class | `services.tasks.manager` | Persist task metadata and manage task workspaces and attachment files. |
 | `services.auth_service.AuthService` | class | `services.auth_service` | Manage local users, password hashing, login, logout, and bearer sessions. |
 | `services.config_handler.ConfigHandler` | class | `services.config_handler` | Resolve and persist user LLM configuration. |
+| `services.gzctf_service.GZCTFService` | class | `services.gzctf_service` | Authenticate to GZCTF, persist cookies, fetch game metadata, match challenges, and submit flags. |
 | `services.storage.ApplicationStorage` | class | `services.storage` | Own application data directories and config store. |
 | `services.background_jobs.BackgroundJobManager` | class | `services.background_jobs` | Start, stream, interact with, and stop background shell jobs. |
 | `services.knowledge_service.KnowledgeService` | class | `services.knowledge_service` | Search local knowledge and manage knowledge review records. |
@@ -89,6 +91,12 @@ The backend is split into three layers:
 - Agent lifecycle: task list and status reads refresh `artifacts.agent_status`; task creation routes call `workflow.create_agent_for_task` after attachments are stored; delete calls `workflow.discard_agent_for_task` before removing task files.
 - Task updates now include `external_tool_names`, which is persisted on the task config and exposed back to the edit form.
 
+### `api.routes.gzctf`
+
+- Responsibility: Start, inspect, and cancel GZCTF batch automation runs for the authenticated user.
+- Calls: `get_services`, `get_request_user_id`, `api_response`, `services.gzctf_automation`, `services.config_handler.get_effective_config`.
+- Called by: `/api/gzctf/automation/start`, `/api/gzctf/automation/runs`, `/api/gzctf/automation/runs/{run_id}`, and `/api/gzctf/automation/runs/{run_id}/cancel` from the tasks page modal.
+
 ### `core.ctf_kernel`
 
 - Responsibility: Run CTF-solving workflows independently of HTTP.
@@ -103,6 +111,21 @@ The backend is split into three layers:
 - Calls: `ApplicationStorage`, `AuthService`, `ConfigHandler`, `TaskManager`, `CTFWorkflowService`, `LLMClient`, `SkillService`, `KnowledgeService`, `DynamicKnowledgeService`, `BackgroundJobManager`, `ToolBootstrapService`.
 - Called by: `app.create_app`.
 - Storage wiring now also configures the hotplug registry root at `<data_dir>/hotplug-tools` before any task or workflow services are reused.
+- The container now also wires `gzctf_automation`, which reuses the shared `task_manager`, `workflow`, and `gzctf_service`.
+
+### `core.gzctf.module.automation`
+
+- Responsibility: Turn a single GZCTF game URL plus credentials into a persisted automation run that fans out many ordinary solve tasks.
+- Key behaviors:
+  - logs into GZCTF through `services.gzctf_service`
+  - flattens and de-duplicates challenge cards from game details
+  - materializes a pending queue and only launches up to `max_concurrent_tasks` at once
+  - accepts cancellation requests, stops further queue dispatch, and attempts to stop running tasks through `workflow.stop_task`
+  - infers task type with `classify_ctf_challenge`
+  - enriches challenge cards with detail and instance endpoints so target-machine data can become the task `target`
+  - downloads best-effort attachments into the created task workspace
+  - prepares the saved runtime config and launches `services.workflow.start_ctf_analysis` per challenge
+  - tracks task status and auto-submit verdicts back into one run record for the frontend modal
 
 ### `services.llm_client`
 

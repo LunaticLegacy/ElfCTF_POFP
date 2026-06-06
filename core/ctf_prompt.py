@@ -231,7 +231,7 @@ def build_ctf_system_prompt(
 
 Work only inside this task workspace: {workspace}
 
-Solve the challenge by following observe -> hypothesize -> test -> verify -> report.
+Solve the challenge within this: Identify the question -> Get information fromm Knowledge Base -> Solve the question -> Finish.
 Prefer concrete tool evidence over guessing. Write helper scripts into the workspace when useful.
 When you finished a step, DO NOT repeat the same step.
 

@@ -6,7 +6,7 @@
   <title>POFP CTF Agent</title>
   <link rel="stylesheet" href="css/style.css?v=20260521-verbose-model-fix">
   <link rel="stylesheet" href="css/agent.css?v=20260521-verbose-model-fix">
-  <link rel="stylesheet" href="css/tasks.css?v=20260529-token-usage-detail">
+  <link rel="stylesheet" href="css/tasks.css?v=20260604-gzctf-automation-queue">
   <link rel="stylesheet" href="css/config-modal.css?v=20260521-verbose-model-fix">
   <link rel="stylesheet" href="css/knowledge.css?v=20260521-verbose-model-fix">
 </head>
@@ -72,6 +72,10 @@
             <button class="sidebar-btn primary" onclick="openNewTaskModal()">
               <span class="btn-icon">＋</span>
               新建任务
+            </button>
+            <button class="sidebar-btn" type="button" onclick="openGzctfAutomationModal()">
+              <span class="btn-icon">⚔</span>
+              GZCTF 自动化
             </button>
             <button class="sidebar-btn" onclick="openConfigModal()">
               <span class="btn-icon">⚙</span>
@@ -227,6 +231,57 @@
       <div class="config-modal-footer">
         <button class="mbtn mbtn-s" type="button" onclick="closeConfigModal()">关闭</button>
         <button class="mbtn mbtn-p config-save-btn" type="button" onclick="onSaveConfigClick(this)">保存设置</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-bg" id="gzctfAutomationModal" onclick="closeGzctfAutomationModal(event)">
+    <div class="modal gzctf-automation-modal" onclick="event.stopPropagation()">
+      <div class="modal-title">GZCTF 全自动解题</div>
+      <div class="modal-body">
+        <div class="gzctf-automation-grid">
+          <div class="gzctf-automation-config">
+            <div class="panel-title">启动配置</div>
+            <div class="panel-subtitle">从比赛链接批量抓题，按队列启动求解器，并在有靶机时优先带上目标信息。</div>
+            <div class="form-group">
+              <label>比赛链接</label>
+              <input class="form-input" type="text" id="gzctfAutomationGameUrl" placeholder="https://example.com/games/33/challenges#">
+            </div>
+            <div class="form-group">
+              <label>比赛账号</label>
+              <input class="form-input" type="text" id="gzctfAutomationUsername" placeholder="账号">
+            </div>
+            <div class="form-group">
+              <label>比赛密码</label>
+              <div style="position:relative">
+                <input class="form-input" type="password" id="gzctfAutomationPassword" placeholder="密码" style="padding-right:36px">
+                <button type="button" class="eye-btn" onclick="togglePasswordLikeVisibility('gzctfAutomationPassword', this)">👁</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label>并发任务数</label>
+              <input class="form-input" type="number" id="gzctfAutomationMaxConcurrent" min="1" step="1" value="3">
+            </div>
+            <div class="form-group">
+              <label>题目上限 <span class="label-optional">0 表示全部</span></label>
+              <input class="form-input" type="number" id="gzctfAutomationChallengeLimit" min="0" step="1" value="0">
+            </div>
+            <div class="detail-actions">
+              <button class="mbtn mbtn-p" type="button" onclick="onStartGzctfAutomationClick(this)">启动自动化</button>
+              <button class="mbtn mbtn-s" type="button" onclick="loadGzctfAutomationRuns()">刷新运行</button>
+            </div>
+          </div>
+          <div class="gzctf-automation-runs">
+            <div class="panel-title">运行记录</div>
+            <div class="panel-subtitle">展示每次比赛抓题、建任务和自动提交的实时状态。</div>
+            <div class="gzctf-automation-run-list" id="gzctfAutomationRuns">
+              <div class="task-log-entry task-log-entry-empty">还没有自动化运行记录。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="mbtn mbtn-s" type="button" onclick="closeGzctfAutomationModal()">关闭</button>
       </div>
     </div>
   </div>
@@ -722,7 +777,7 @@
   <script src="js/ui.js?v=20260521-verbose-model-fix" defer></script>
   <script src="js/cockpit.js?v=20260521-verbose-model-fix" defer></script>
   <script src="js/actions.js?v=20260521-verbose-model-fix" defer></script>
-  <script src="js/tasks.js?v=20260529-token-usage-detail" defer></script>
+  <script src="js/tasks.js?v=20260604-gzctf-automation-queue" defer></script>
   <script src="js/bootstrap.js?v=20260521-verbose-model-fix" defer></script>
 </body>
 </html>

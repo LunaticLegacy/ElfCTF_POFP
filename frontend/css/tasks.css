@@ -971,3 +971,127 @@
     max-width: 100%;
   }
 }
+.gzctf-automation-modal {
+  width: min(1680px, calc(100vw - 24px));
+  max-height: min(1148px, calc(100vh - 24px));
+}
+
+.gzctf-automation-grid {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 20px;
+}
+
+.gzctf-automation-config,
+.gzctf-automation-runs {
+  min-width: 0;
+}
+
+.gzctf-automation-run-list {
+  max-height: 620px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-right: 4px;
+}
+
+.gzctf-run-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--panel) 92%, var(--bg) 8%);
+}
+
+.gzctf-run-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.gzctf-run-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.gzctf-run-title {
+  font-size: 14px;
+  font-weight: 700;
+  word-break: break-all;
+}
+
+.gzctf-run-subtitle,
+.gzctf-run-message {
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.gzctf-run-status {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.gzctf-run-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+}
+
+.gzctf-run-challenges {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.gzctf-run-challenge {
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--panel) 78%, var(--bg) 22%);
+}
+
+.gzctf-run-challenge-title {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.gzctf-run-challenge-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.gzctf-run-challenge-extra {
+  margin-top: 8px;
+  display: grid;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-2);
+  word-break: break-all;
+}
+
+.gzctf-run-cancel-btn {
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .gzctf-automation-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .gzctf-automation-run-list {
+    max-height: 420px;
+  }
+}
