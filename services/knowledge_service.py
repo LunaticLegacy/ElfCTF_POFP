@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from core.json_types import JsonObject
-from modules.rag.knowledge_base import KnowledgeBase
+from modules.llmfetcher.rag_module.knowledge_base import KnowledgeBase
 
 
 class KnowledgeService:
