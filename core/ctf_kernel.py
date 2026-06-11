@@ -21,7 +21,7 @@ from core.ctf_tools import create_ctf_tools, create_knowledge_tools
 from core.ctf_obscura_tools import create_obscura_tools
 from core.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
 from services.tools.hotplug import hotplug_manager
-from modules.rag.knowledge_base import KnowledgeBase
+from modules.llmfetcher.rag_module.knowledge_base import KnowledgeBase
 
 from .models import CTFTask, TaskStatus, RuntimeConfig
 from .ctf_prompt import build_ctf_compression_profile, build_ctf_system_prompt, build_ctf_user_prompt

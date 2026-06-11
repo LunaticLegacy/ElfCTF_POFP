@@ -411,6 +411,30 @@ The backend is split into three layers:
 - Returns: Dataclass instance; `to_execution_format()` returns a JSON-compatible execution payload.
 - Side effects: None.
 
+#### `modules.llmfetcher.llm_types.LLMContextSnapshot`
+
+- Signature: `LLMContextSnapshot(schema_version: int = 1, context_mode: ContextMode = 'graph', now_context_id: int = 1, active_ids: list[int] = ..., contexts: list[JsonObject] = ..., memories: list[str] = ..., tool_result_facts: list[JsonObject] = ..., enable_memory: bool = True, enable_tagging: bool = False)`
+- Purpose: JSON-friendly export/import payload for one llmfetcher context handler.
+- Parameters:
+  - `schema_version`: Snapshot schema version.
+  - `context_mode`: Stored handler mode.
+  - `now_context_id`: Next timeline id to allocate after restore.
+  - `active_ids`: Active-window timeline ids.
+  - `contexts`: Serialized raw and compacted timeline entries.
+  - `memories`: Persistent memory strings.
+  - `tool_result_facts`: Serialized compressed tool-result facts.
+  - `enable_memory`: Whether memory collection was enabled when exported.
+  - `enable_tagging`: Whether tag indexing was enabled when exported.
+- Returns: Dataclass instance; `to_dict()` emits JSON-friendly data and `from_dict()` rebuilds the snapshot from a mapping.
+- Side effects: None.
+
+#### `modules.llmfetcher.llm_context.ContextSemanticIndex`
+
+- Responsibility: In-memory vector-style retrieval index for llmfetcher context entries.
+- Base classes: `None`.
+- Known subclasses: `None observed`.
+- Behavior pattern: Stores semantic documents and embeddings in memory, prefers an ephemeral Chroma collection when available, and falls back to a deterministic pure-Python embedding cache when optional vector dependencies or model weights are unavailable.
+
 ## Functions
 
 ### `services.llm_client.LLMClient.fetch_models`
@@ -473,6 +497,313 @@ The backend is split into three layers:
 | `core.ctf_kernel.CTFWorkflowService._configure_agent_for_task` | `services.tools.hotplug.hotplug_manager.build_runtime_tools` | Registers hotplug manifest tools onto the task Agent. |
 | `core.ctf_kernel.CTFWorkflowService._run_agent` | `modules.llmfetcher.Agent.run_agent_round` | Executes the LLM Agent loop with cooperative stop and flag detection. |
 | `core.ctf_kernel.CTFWorkflowService._run_agent` | `modules.llmfetcher.ctf_module.ctf_skill_router.enrich_prompt_with_ctf_skills` | Loads relevant CTF skills into the prompt. |
+| `modules.llmfetcher.rag_module.knowledge.VectorIndexManager.rebuild_vector_index` | `modules.llmfetcher.rag_module.knowledge.TextTools.chunk_document`, `modules.llmfetcher.rag_module.knowledge.TextTools.build_excerpt` | Builds chunk payloads and manifest excerpts for semantic indexing. |
+| `modules.llmfetcher.rag_module.knowledge.HybridRetriever.search` | `modules.llmfetcher.rag_module.knowledge.KeywordRetriever.score_chunk`, `modules.llmfetcher.rag_module.knowledge.TaskRetrievalPolicy.boost_for_chunk`, `modules.llmfetcher.rag_module.knowledge.ChromaVectorStore.query`, `modules.llmfetcher.rag_module.knowledge.TextTools.build_excerpt` | Chunk-level hybrid scoring. |
+
+## Knowledge RAG
+
+### Classes
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeBase`
+
+- Responsibility: Public facade for local knowledge retrieval, vector-index lifecycle management, task-aware retrieval, and prompt-context formatting.
+- Constructor state: Owns `KnowledgeConfig`, `MarkdownKnowledgeLoader`, `KnowledgeManifestStore`, `EmbeddingModelProvider`, `ChromaVectorStore`, `KeywordRetriever`, `TaskRetrievalPolicy`, `VectorIndexManager`, `HybridRetriever`, and `TaskContextBuilder`.
+- Base classes: `None`.
+- Key methods:
+  - `available()` checks whether the knowledge root exists.
+  - `search()` builds a freeform `RetrievalQuery` and runs chunk-level hybrid retrieval.
+  - `search_for_task()` builds a task-aware `RetrievalQuery`, runs hybrid retrieval, and falls back to strategy cards when needed.
+  - `build_task_context()` renders hits into prompt-ready text.
+  - `ensure_vector_index()` and `rebuild_vector_index()` delegate to `VectorIndexManager`.
+  - `vector_status()` returns manifest/backend status.
+  - `get_full_text()` and `get_documents_by_paths()` expose raw Markdown text.
+  - `get_chunk()`, `get_chunk_text()`, and `get_chunk_text_from_hit()` expose chunk-level source content.
+- Called by: `services.knowledge_service.KnowledgeService`, local tests, and direct import callers.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeChunk`
+
+- Responsibility: Represent one retrieval chunk derived from a Markdown source document.
+- Fields: `source_path`, `source_title`, `chunk_key`, `chunk_index`, `chunk_title`, `heading_path`, `start_line`, `end_line`, `content`.
+- Used by: `TextTools.chunk_document`, `KeywordRetriever.score_chunk`, `TaskRetrievalPolicy.boost_for_chunk`, `VectorIndexManager.rebuild_vector_index`, and `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeHit`
+
+- Responsibility: Final chunk-level retrieval result returned by public search APIs.
+- Fields: `path`, `title`, `score`, `excerpt`, `chunk_key`, `chunk_index`, `chunk_title`, `heading_path`, `start_line`, `end_line`, `keyword_score`, `vector_score`.
+- Used by: `KnowledgeBase.search`, `KnowledgeBase.search_for_task`, `TaskContextBuilder.build`, `services.knowledge_service.KnowledgeService.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.VectorHit`
+
+- Responsibility: Chunk-level semantic match returned by the vector backend adapter.
+- Fields: `path`, `chunk_key`, `chunk_index`, `chunk_title`, `heading_path`, `start_line`, `end_line`, `score`, `excerpt`.
+- Used by: `ChromaVectorStore.query`, `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.MarkdownBlock`
+
+- Responsibility: Represent one logical block extracted from Markdown after frontmatter stripping and markdown-it parsing.
+- Fields: `kind`, `text`, `start_line`, `end_line`, `level`, `info`.
+- Used by: `TextTools._markdown_blocks`, `TextTools.build_excerpt`, `TextTools.chunk_document`, `TextTools.should_skip_excerpt_block`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools`
+
+- Responsibility: Normalize Markdown text, strip YAML frontmatter before parsing, build excerpts from block-level content, split documents into retrieval chunks, and construct semantic vector payloads.
+- Constructor state: Stores excerpt, embedding, and chunk size limits plus a reusable `markdown-it` parser configured with table support.
+- Base classes: `None`.
+- Known subclasses: `None observed`.
+- Key methods:
+  - `extract_terms()` normalizes query text into deduplicated search terms.
+  - `build_excerpt()` selects a readable non-heading block, preferring blocks that contain query terms.
+  - `chunk_document()` converts a parsed Markdown document into chunk-level retrieval units.
+  - `should_skip_excerpt_line()` and `should_skip_excerpt_block()` apply the excerpt skip rules.
+  - `build_chunk_semantic_document()` and `build_semantic_document()` build vector-store payload text.
+  - `excerpt_from_semantic_document()` extracts a display excerpt from stored semantic text.
+- Helper methods:
+  - `_markdown_blocks()` removes YAML frontmatter and converts markdown-it tokens into `MarkdownBlock` objects.
+  - `_strip_yaml_frontmatter()` isolates the leading YAML header before parsing.
+  - `_fallback_markdown_blocks()` preserves a conservative line-based parser when token parsing is unavailable.
+- Called by: `VectorIndexManager.rebuild_vector_index`, `HybridRetriever.search`, keyword/vector manifest code, and direct knowledge-base callers.
+
+#### `modules.llmfetcher.rag_module.knowledge.MarkdownKnowledgeLoader`
+
+- Responsibility: Scan Markdown knowledge documents, extract titles, and exclude ignored or generated paths before they reach indexing.
+- Constructor state: Stores the resolved knowledge root; ignore patterns are loaded from the `kb/.kbignore` file when scanning.
+- Base classes: `None`.
+- Known subclasses: `None observed`.
+- Key methods:
+  - `available()` checks whether the configured root exists.
+  - `iter_entry_files()` yields Markdown files after applying the built-in exclusions and `.kbignore` patterns from the knowledge root.
+  - `read_document()` loads one Markdown file into a `KnowledgeDocument`.
+  - `load_documents()` materializes the filtered document list.
+  - `extract_title()` derives a display title from the first heading or filename.
+  - `_load_ignore_patterns()` reads `.kbignore`.
+  - `_is_ignored_path()` and `_match_ignore_pattern()` apply path filtering.
+- Called by: `KnowledgeBase`, `VectorIndexManager`, and `HybridRetriever`.
+
+### Functions and Methods
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.chunk_document`
+
+- Signature: `chunk_document(self, document: KnowledgeDocument) -> list[KnowledgeChunk]`
+- Purpose: Split one Markdown document into chunk-level retrieval units using markdown-it heading boundaries, frontmatter stripping, and size limits.
+- Calls: `TextTools._markdown_blocks`, `TextTools._chunk_key`.
+- Called by: `VectorIndexManager.rebuild_vector_index`, `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.build_excerpt`
+
+- Signature: `build_excerpt(self, content: str, terms: Sequence[str]) -> str`
+- Purpose: Build a short excerpt from block-level Markdown content while preferring blocks that mention the query terms.
+- Calls: `TextTools._markdown_blocks`, `TextTools.should_skip_excerpt_block`, `TextTools.trim_excerpt`.
+- Called by: `VectorIndexManager.rebuild_vector_index`, `HybridRetriever.search`, `TextTools.excerpt_from_semantic_document`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.build_chunk_semantic_document`
+
+- Signature: `build_chunk_semantic_document(self, chunk: KnowledgeChunk) -> str`
+- Purpose: Build the semantic payload for one retrieval chunk, combining the source title, heading path, repository-relative chunk path, and chunk body.
+- Calls: `TextTools.build_semantic_document`.
+- Called by: `VectorIndexManager.rebuild_vector_index`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.build_semantic_document`
+
+- Signature: `build_semantic_document(self, *, title: str, relative_path: str, content: str) -> str`
+- Purpose: Build the stored semantic vector text payload with whitespace normalization and length truncation.
+- Called by: `TextTools.build_chunk_semantic_document`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.excerpt_from_semantic_document`
+
+- Signature: `excerpt_from_semantic_document(self, document: str) -> str`
+- Purpose: Extract a display excerpt from a stored semantic payload by keeping only the body segment.
+- Calls: `TextTools.build_excerpt`.
+- Called by: `VectorStore`-backed semantic hit normalization.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.should_skip_excerpt_line`
+
+- Signature: `should_skip_excerpt_line(self, line: str) -> bool`
+- Purpose: Preserve the legacy line-based skip rules for prompt, knowledge-base, and table-like excerpts.
+- Calls: `TextTools.should_skip_excerpt_block`.
+- Called by: direct callers and compatibility tests.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.should_skip_excerpt_block`
+
+- Signature: `should_skip_excerpt_block(self, block: MarkdownBlock) -> bool`
+- Purpose: Apply the excerpt skip rules to parsed Markdown blocks, including headings, tables, and internal prompt/KB references.
+- Called by: `TextTools.build_excerpt`, `TextTools.should_skip_excerpt_line`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._markdown_blocks`
+
+- Signature: `_markdown_blocks(self, content: str) -> list[MarkdownBlock]`
+- Purpose: Strip YAML frontmatter and convert markdown-it tokens into ordered block objects with original source line ranges.
+- Calls: `TextTools._strip_yaml_frontmatter`, `TextTools._markdown_blocks_from_tokens`, `TextTools._fallback_markdown_blocks`.
+- Called by: `TextTools.build_excerpt`, `TextTools.chunk_document`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._strip_yaml_frontmatter`
+
+- Signature: `_strip_yaml_frontmatter(self, content: str) -> tuple[str, int]`
+- Purpose: Remove a leading YAML frontmatter block and return the remaining Markdown body plus the removed line count.
+- Called by: `TextTools._markdown_blocks`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools.trim_excerpt`
+
+- Signature: `trim_excerpt(self, text: str) -> str`
+- Purpose: Collapse whitespace and enforce the configured excerpt length budget.
+- Called by: `TextTools.build_excerpt`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._markdown_blocks_from_tokens`
+
+- Signature: `_markdown_blocks_from_tokens(self, tokens: list[Token], lines: list[str], line_offset: int) -> list[MarkdownBlock]`
+- Purpose: Convert markdown-it tokens into block records while preserving source line spans.
+- Calls: `TextTools._block_from_token`, `TextTools._skip_until`, `TextTools._next_inline_token`, `TextTools._inline_text`, `TextTools._heading_level`, `TextTools._raw_block_text`.
+- Called by: `TextTools._markdown_blocks`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._fallback_markdown_blocks`
+
+- Signature: `_fallback_markdown_blocks(self, content: str, line_offset: int) -> list[MarkdownBlock]`
+- Purpose: Preserve the legacy line-based Markdown splitting behavior when token parsing is unavailable.
+- Called by: `TextTools._markdown_blocks`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._block_from_token`
+
+- Signature: `_block_from_token(self, token: Token, lines: list[str], line_offset: int, *, kind: str, text: str | None = None, level: int | None = None, info: str | None = None) -> MarkdownBlock | None`
+- Purpose: Build a `MarkdownBlock` from a markdown-it token and its source slice.
+- Calls: `TextTools._token_lines`, `TextTools._raw_block_text`.
+- Called by: `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._token_lines`
+
+- Signature: `_token_lines(self, token: Token, line_offset: int, line_count: int) -> tuple[int, int]`
+- Purpose: Convert token line maps into original 1-based document line numbers.
+- Called by: `TextTools._block_from_token`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._raw_block_text`
+
+- Signature: `_raw_block_text(self, token: Token, lines: list[str], default: str = '') -> str`
+- Purpose: Reconstruct the raw Markdown text slice for a token when line-map data is present.
+- Called by: `TextTools._block_from_token`, `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._next_inline_token`
+
+- Signature: `_next_inline_token(self, tokens: list[Token], index: int) -> Token | None`
+- Purpose: Return the inline token that follows a block opener when present.
+- Called by: `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._skip_until`
+
+- Signature: `_skip_until(self, tokens: list[Token], index: int, token_type: str) -> int`
+- Purpose: Advance through nested markdown-it tokens until a matching close token is reached.
+- Called by: `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._inline_text`
+
+- Signature: `_inline_text(self, token: Token | None) -> str`
+- Purpose: Render inline markdown tokens as readable plain text.
+- Called by: `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._heading_level`
+
+- Signature: `_heading_level(self, token: Token) -> int | None`
+- Purpose: Convert a markdown-it heading tag into a numeric heading level.
+- Called by: `TextTools._markdown_blocks_from_tokens`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TextTools._chunk_key`
+
+- Signature: `_chunk_key(self, *, source_path: str, chunk_index: int, start_line: int, end_line: int, heading_path: str, chunk_title: str, content: str) -> str`
+- Purpose: Build a stable MD5 chunk identifier from source path, span, heading path, and chunk body.
+- Called by: `TextTools.chunk_document`.
+
+#### `modules.llmfetcher.rag_module.knowledge.VectorIndexManager.rebuild_vector_index`
+
+- Signature: `rebuild_vector_index(self, *, documents: list | None = None) -> dict[str, KnowledgeIndexEntry]`
+- Purpose: Rebuild the manifest and semantic vector store from source documents while indexing chunk payloads.
+- Side effects: Reads Markdown files, writes `.vector_index.json`, recreates the Chroma collection, and records backend errors.
+- Calls: `MarkdownKnowledgeLoader.load_documents`, `TextTools.chunk_document`, `TextTools.build_chunk_semantic_document`, `ChromaVectorStore.rebuild`, `KnowledgeManifestStore.save`.
+- Called by: `KnowledgeBase.rebuild_vector_index`, `KnowledgeBase.ensure_vector_index` via the index manager.
+
+#### `modules.llmfetcher.rag_module.knowledge.HybridRetriever.search`
+
+- Signature: `search(self, query: RetrievalQuery) -> list[KnowledgeHit]`
+- Purpose: Score every current chunk with deterministic keywords, optional task boosts, and optional vector similarity, then return the top-ranked hits.
+- Calls: `VectorIndexManager.ensure_vector_index`, `MarkdownKnowledgeLoader.load_documents`, `TextTools.chunk_document`, `KeywordRetriever.score_chunk`, `TaskRetrievalPolicy.boost_for_chunk`, `ChromaVectorStore.query`.
+- Called by: `KnowledgeBase.search`, `KnowledgeBase.search_for_task`.
+
+#### `modules.llmfetcher.rag_module.knowledge.ChromaVectorStore.query`
+
+- Signature: `query(self, query_text: str, *, limit: int) -> dict[str, VectorHit]`
+- Purpose: Query the semantic vector backend and normalize Chroma rows into chunk-keyed `VectorHit` objects.
+- Side effects: Loads the embedding model on demand and records runtime errors on failure.
+- Called by: `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.KeywordRetriever.score_chunk`
+
+- Signature: `score_chunk(self, chunk: KnowledgeChunk, terms: list[str]) -> int`
+- Purpose: Reuse deterministic lexical scoring on chunk title, heading path, source path, and chunk body.
+- Called by: `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.TaskRetrievalPolicy.boost_for_chunk`
+
+- Signature: `boost_for_chunk(self, chunk: KnowledgeChunk, task_type: str) -> int`
+- Purpose: Apply task-specific boosts to chunk-level retrieval, preserving the old RE strategy preference.
+- Called by: `HybridRetriever.search`.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeManifestStore.save`
+
+- Signature: `save(self, entries: dict[str, KnowledgeIndexEntry], *, chunk_count: int, backend_ready: bool, last_error: str) -> None`
+- Purpose: Persist doc-level freshness metadata plus chunk count into `.vector_index.json`.
+- Side effects: Writes the manifest file.
+- Called by: `VectorIndexManager.rebuild_vector_index`.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeManifestStore.is_fresh`
+
+- Signature: `is_fresh(self, loaded: dict[str, KnowledgeIndexEntry], documents: list[KnowledgeDocument]) -> bool`
+- Purpose: Validate that the manifest still matches the current source documents before reusing the semantic index.
+- Called by: `VectorIndexManager.ensure_vector_index`.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeBase.get_chunk`
+
+- Signature: `get_chunk(self, path: str, *, chunk_key: str = '', chunk_index: int | None = None) -> KnowledgeChunk | None`
+- Purpose: Recompute chunks for a source document and return the matching chunk object by stable key or ordinal.
+- Side effects: Reads and parses the source Markdown document.
+- Called by: `KnowledgeBase.get_chunk_text`, `core.ctf_tools.create_knowledge_tools`' chunk reader.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeBase.get_chunk_text`
+
+- Signature: `get_chunk_text(self, path: str, *, chunk_key: str = '', chunk_index: int | None = None) -> str | None`
+- Purpose: Return the raw Markdown body for one chunk.
+- Called by: `core.ctf_tools.create_knowledge_tools`' chunk reader.
+
+#### `modules.llmfetcher.rag_module.knowledge.KnowledgeBase.get_chunk_text_from_hit`
+
+- Signature: `get_chunk_text_from_hit(self, hit: KnowledgeHit) -> str | None`
+- Purpose: Return the raw Markdown body for a retrieved chunk hit.
+- Called by: direct callers that already have `KnowledgeHit`.
+
+## RAG Demo
+
+### Functions
+
+#### `demo.rag_demo.build_parser`
+
+- Signature: `build_parser() -> argparse.ArgumentParser`
+- Purpose: Build the CLI parser for the chunk RAG demo.
+- Called by: `demo.rag_demo.main`.
+
+#### `demo.rag_demo.render_hit`
+
+- Signature: `render_hit(index: int, hit) -> str`
+- Purpose: Format one chunk-level hit into a readable text block for terminal output.
+- Called by: `demo.rag_demo.main`.
+
+#### `demo.rag_demo.render_chunk_text`
+
+- Signature: `render_chunk_text(text: str, *, max_chars: int) -> str`
+- Purpose: Truncate and format one chunk body for terminal output.
+- Called by: `demo.rag_demo.main`.
+
+#### `demo.rag_demo.main`
+
+- Signature: `main() -> None`
+- Purpose: Load the local knowledge base, run a freeform search, and optionally render task-oriented context.
+- Side effects: Reads the repository knowledge base, optionally rebuilds the vector index, and prints results to stdout.
+- Calls: `demo.rag_demo.build_parser`, `modules.llmfetcher.rag_module.knowledge_base.KnowledgeBase`, `KnowledgeBase.search`, `KnowledgeBase.rebuild_vector_index`, `KnowledgeBase.build_task_context`, `KnowledgeBase.get_chunk_text_from_hit`, `demo.rag_demo.render_hit`, `demo.rag_demo.render_chunk_text`.
+- Called by: module-level `__main__` entry point.
 
 ## Inheritance Graph
 
@@ -499,6 +830,8 @@ The backend is split into three layers:
 | `core.ctf_kernel.CTFWorkflowService._run_agent` | Calls LLM API and task tools | configured provider and task workspace |
 | `services.background_jobs.BackgroundJobManager.start_job` | Starts shell process | local subprocess |
 | `services.temp_mcp.TempMcpManager.create_server` | Writes generated Python script | `.elfctf/temp-mcp` |
+| `modules.llmfetcher.rag_module.knowledge.VectorIndexManager.rebuild_vector_index` | Scans Markdown docs, writes manifest, upserts chunk embeddings | `.vector_index.json`, `.chroma/` |
+| `modules.llmfetcher.rag_module.knowledge.KnowledgeManifestStore.save` | Writes chunk-aware manifest metadata | `.vector_index.json` |
 
 ## Open Questions
 
