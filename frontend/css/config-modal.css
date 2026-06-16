@@ -58,6 +58,20 @@
   border-bottom: 1px solid var(--border);
 }
 
+.config-section-toggle {
+  flex-shrink: 0;
+}
+
+.config-section-disabled {
+  opacity: 0.72;
+}
+
+.config-section-disabled .form-input,
+.config-section-disabled .eye-btn,
+.config-section-disabled .mbtn {
+  cursor: not-allowed;
+}
+
 .config-modal-footer {
   padding: 14px 20px;
   border-top: 1px solid var(--border);

@@ -17,9 +17,9 @@ from core.json_types import JsonObject
 from modules.llmfetcher import Agent, LLMFetcher, create_shell_tools
 from modules.llmfetcher.tools.workflow_tool import create_workflow_tool
 from modules.llmfetcher.llm_types import LLMBackendConfig, LLMOutput
-from core.ctf_tools import create_ctf_tools, create_knowledge_tools
 from core.ctf_obscura_tools import create_obscura_tools
 from core.ctf_module.ctf_skill_router import classify_ctf_challenge, enrich_prompt_with_ctf_skills
+from core.ctf_tools import create_ctf_tools, create_rag_knowledge_tools
 from services.tools.hotplug import hotplug_manager
 from modules.llmfetcher.rag_module.knowledge_base import KnowledgeBase
 
@@ -42,7 +42,8 @@ FLAG_PATTERN = re.compile(r"(?i)\b(?:flag|ctf|elfctf)\{[^}\s]{1,200}\}")
 
 @dataclass
 class WorkflowResult:
-    """Route-friendly workflow operation result.
+    """
+    Route-friendly workflow operation result.
 
     Attributes:
         success: Whether the workflow operation completed successfully.
@@ -314,6 +315,7 @@ class CTFWorkflowService:
         agent = Agent(
             llm_handler=fetcher,
             system_prompt=self._base_system_prompt(task, workspace),
+            use_state=False,
             tools=[],
             max_concurrent_tools=4,
             compression_profile=compression_profile,
@@ -357,7 +359,7 @@ class CTFWorkflowService:
         tools = (
             create_shell_tools(sandbox_cwd=str(workspace))
             + create_ctf_tools(workspace)
-            + create_knowledge_tools(knowledge_base)
+            + create_rag_knowledge_tools(knowledge_base)
             + hotplug_manager.build_runtime_tools(
                 default_cwd=workspace,
                 tool_names=task.config.external_tool_names,

@@ -7,6 +7,26 @@ import requests
 from . import config_router
 from ..dependencies import api_response, get_request_user_id, get_services
 from ..schemas import ConfigUpdateRequest
+from core.models import RuntimeConfig
+
+
+def _build_gzctf_runtime_config(request: Request, payload: dict, user_id: str) -> RuntimeConfig:
+    """Merge the saved config with optional GZCTF values from the current request."""
+    services = get_services(request)
+    saved = services.config_handler.get_effective_config(user_id)
+    merged = RuntimeConfig(**saved.to_dict())
+    overrides = {
+        'gzctf_username': str(payload.get('gzctf_username', payload.get('username', ''))).strip(),
+        'gzctf_password': str(payload.get('gzctf_password', payload.get('password', ''))),
+        'gzctf_game_url': str(payload.get('gzctf_game_url', payload.get('game_url', ''))).strip(),
+    }
+    provided_values = False
+    for key, value in overrides.items():
+        if value:
+            setattr(merged, key, value)
+            provided_values = True
+    merged.gzctf_enabled = bool(merged.gzctf_enabled or provided_values)
+    return merged
 
 
 @config_router.get('/config')
@@ -52,8 +72,6 @@ def get_config(request: Request) -> JSONResponse:
 @config_router.post('/config')
 def save_config(request: Request, payload: ConfigUpdateRequest) -> JSONResponse:
     """Persist a user-submitted API configuration.
-    前端会对这里发送一份配置文件，然后现在要怎么将配置放进来？
-    注意：这里会手动登入 gzctf。
 
     Args:
         request: Current FastAPI request used for auth and services.
@@ -68,19 +86,25 @@ def save_config(request: Request, payload: ConfigUpdateRequest) -> JSONResponse:
     try:
         update_request = ConfigUpdateRequest.from_payload(payload.__dict__)
         candidate_config = update_request.to_payload()
-        services.gzctf_service.validate_config(candidate_config)
+        if not candidate_config.gzctf_enabled:
+            candidate_config.gzctf_username = ''
+            candidate_config.gzctf_password = ''
+            candidate_config.gzctf_game_url = ''
+            services.gzctf_service.clear_cookie(user_id)
+        else:
+            services.gzctf_service.validate_config(candidate_config)
     except (TypeError, ValueError) as exc:
         return api_response(False, message=f'配置无效: {exc}', status_code=400)
-    
-    # 尝试登录 gzctf，并……等一下，cookie 在哪？
+
     gzctf_status = services.gzctf_service.get_status(user_id, candidate_config)
-    try:
-        login_status = services.gzctf_service.refresh_login(user_id, candidate_config)
-        gzctf_status = {**gzctf_status, **login_status}
-    except requests.RequestException as exc:
-        return api_response(False, message=f'GZCTF 登录失败: {exc}', status_code=400)
-    except RuntimeError as exc:
-        return api_response(False, message=f'GZCTF 配置失败: {exc}', status_code=500)
+    if candidate_config.gzctf_enabled:
+        try:
+            login_status = services.gzctf_service.refresh_login(user_id, candidate_config)
+            gzctf_status = {**gzctf_status, **login_status}
+        except requests.RequestException as exc:
+            return api_response(False, message=f'GZCTF 登录失败: {exc}', status_code=400)
+        except RuntimeError as exc:
+            return api_response(False, message=f'GZCTF 配置失败: {exc}', status_code=500)
 
     config = services.config_handler.save_config(candidate_config, user_id)
 
@@ -112,11 +136,15 @@ def save_config(request: Request, payload: ConfigUpdateRequest) -> JSONResponse:
 
 
 @config_router.post('/config/gzctf/team')
-def fetch_gzctf_team(request: Request) -> JSONResponse:
+async def fetch_gzctf_team(request: Request) -> JSONResponse:
     """Log in with the saved GZCTF settings and return the current team summary."""
     services = get_services(request)
     user_id = get_request_user_id(request)
-    user_config = services.config_handler.get_user_config(user_id)
+    raw_payload = {}
+    content_type = request.headers.get('content-type', '')
+    if content_type.startswith('application/json'):
+        raw_payload = await request.json()
+    user_config = _build_gzctf_runtime_config(request, raw_payload or {}, user_id)
     try:
         status = services.gzctf_service.fetch_team_info(user_id, user_config)
     except (ValueError, requests.RequestException) as exc:

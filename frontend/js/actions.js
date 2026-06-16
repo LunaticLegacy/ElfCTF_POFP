@@ -120,6 +120,7 @@ async function onSaveConfigClick(triggerBtn) {
   const maxRounds = Number(getInputValue('maxRoundsInput', '50'));
   const maxContextChars = Number(getInputValue('maxContextCharsInput', '14000'));
   const showTerminalOutput = Boolean(document.getElementById('showTerminalOutputToggle')?.checked);
+  const gzctfEnabled = Boolean(document.getElementById('gzctfEnabled')?.checked);
   const gzctfUsername = getInputValue('gzctfUsername').trim();
   const gzctfPassword = getInputValue('gzctfPassword');
   const gzctfGameUrl = getInputValue('gzctfGameUrl').trim();
@@ -160,9 +161,12 @@ async function onSaveConfigClick(triggerBtn) {
       max_rounds: maxRounds,
       max_context_chars: maxContextChars,
       show_terminal_output: showTerminalOutput,
-      gzctf_username: gzctfUsername,
-      gzctf_password: gzctfPassword,
-      gzctf_game_url: gzctfGameUrl
+      gzctf_enabled: gzctfEnabled,
+      ...(gzctfEnabled ? {
+        gzctf_username: gzctfUsername,
+        gzctf_password: gzctfPassword,
+        gzctf_game_url: gzctfGameUrl,
+      } : {})
     })
   });
   
@@ -179,10 +183,13 @@ async function onSaveConfigClick(triggerBtn) {
       effective_model: result.data?.effective_model || model || currentUserConfigState.effective_model,
       effective_api_base: result.data?.effective_api_base || apiBase || currentUserConfigState.effective_api_base,
       effective_connector_type: result.data?.connector_type || connectorType || 'litellm',
+      gzctf_enabled: Boolean(result.data?.gzctf_enabled),
       gzctf_status_message: result.data?.gzctf_status_message || '',
       gzctf_has_cookie: Boolean(result.data?.gzctf_has_cookie),
       gzctf_team: result.data?.gzctf_team || null,
     };
+    setCheckboxValue('gzctfEnabled', Boolean(result.data?.gzctf_enabled));
+    toggleGzctfConfigInputs(Boolean(result.data?.gzctf_enabled));
     updateUserContextUi();
     updateGzctfStatusUi(result.data || {});
     btn.textContent = '✓ 已保存';
@@ -210,9 +217,15 @@ async function onFetchGzctfTeamClick(triggerBtn) {
   btn.textContent = '获取中...';
 
   try {
+    const gzctfEnabled = Boolean(document.getElementById('gzctfEnabled')?.checked);
     const result = await apiRequest(`${API_BASE}/config/gzctf/team`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        gzctf_enabled: gzctfEnabled,
+        gzctf_username: gzctfEnabled ? getInputValue('gzctfUsername').trim() : '',
+        gzctf_password: gzctfEnabled ? getInputValue('gzctfPassword') : '',
+        gzctf_game_url: gzctfEnabled ? getInputValue('gzctfGameUrl').trim() : '',
+      }),
     });
     if (!result.success) {
       addLog('err', `GZCTF 队伍获取失败: ${result.message}`);

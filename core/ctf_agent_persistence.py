@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional
 from modules.llmfetcher import Agent
 from modules.llmfetcher.agent import AgentState
 from modules.llmfetcher.llm_context import LLMContext, LLMContextCompacted
-from modules.llmfetcher.llm_types import LLMInfo
+from modules.llmfetcher.llm_types import LLMInfo, ToolResultFact
 
 
 def agent_state_file(tasks_dir: Path, task_id: str) -> Path:
@@ -31,7 +31,10 @@ def serialize_agent(agent: Agent) -> Dict[str, Any]:
                 'timeline': entry.timeline,
                 'role': entry.role,
                 'content': entry.content,
+                'content_reasoning': entry.content_reasoning or '',
                 'tool_call_info': list(entry.tool_call_info or []),
+                'tool_call_ids': list(entry.tool_call_ids or []),
+                'tool_result_facts': list(entry.tool_result_facts or []),
                 'tags': list(entry.tags or []),
             })
             continue
@@ -57,6 +60,7 @@ def serialize_agent(agent: Agent) -> Dict[str, Any]:
             'entries': entries,
             'memories': context_handler.copy_memories() or [],
         },
+        'tool_result_facts': [asdict(fact) for fact in context_handler.get_tool_result_facts()],
     }
 
 
@@ -84,6 +88,23 @@ def restore_agent(agent: Agent, payload: Dict[str, Any]) -> None:
         return
     handler = agent.context_manager
     handler.clear()
+    handler.tool_result_facts = [
+        ToolResultFact(
+            tool_name=str(item.get('tool_name', '')),
+            summary=str(item.get('summary', '')),
+            facts=[str(fact) for fact in item.get('facts', []) if str(fact).strip()],
+            evidence=str(item.get('evidence', '')),
+            status=str(item.get('status', 'unknown')),
+            tool_call_id=(
+                str(item.get('tool_call_id')).strip()
+                if item.get('tool_call_id') is not None and str(item.get('tool_call_id')).strip()
+                else None
+            ),
+            tags=[str(value) for value in item.get('tags', [])] if isinstance(item.get('tags'), list) else [],
+        )
+        for item in payload.get('tool_result_facts', [])
+        if isinstance(item, dict) and str(item.get('tool_name', '')).strip()
+    ]
     pending_compacted = []
     for item in context_payload.get('entries', []):
         if not isinstance(item, dict):
@@ -93,7 +114,10 @@ def restore_agent(agent: Agent, payload: Dict[str, Any]) -> None:
                 role=str(item.get('role') or 'assistant'),
                 content=str(item.get('content') or ''),
                 timeline=int(item.get('timeline') or item.get('id') or 0),
+                content_reasoning=str(item.get('content_reasoning', item.get('reasoning_content', ''))) or None,
                 tool_call_info=[str(value) for value in item.get('tool_call_info', [])] if isinstance(item.get('tool_call_info'), list) else [],
+                tool_call_ids=[str(value) for value in item.get('tool_call_ids', [])] if isinstance(item.get('tool_call_ids'), list) else [],
+                tool_result_facts=[str(value) for value in item.get('tool_result_facts', [])] if isinstance(item.get('tool_result_facts'), list) else [],
                 tags=[str(value) for value in item.get('tags', [])] if isinstance(item.get('tags'), list) else [],
             )
             if entry.timeline > 0:
@@ -175,7 +199,10 @@ def build_agent_context_snapshot(agent: Agent) -> Dict[str, Any]:
                 'active': context_id in active_ids,
                 'role': entry.role,
                 'content': entry.content,
+                'content_reasoning': entry.content_reasoning or '',
                 'tool_call_info': list(entry.tool_call_info or []),
+                'tool_call_ids': list(entry.tool_call_ids or []),
+                'tool_result_facts': list(entry.tool_result_facts or []),
                 'tags': list(entry.tags or []),
             })
             continue
@@ -205,7 +232,23 @@ def build_agent_context_snapshot(agent: Agent) -> Dict[str, Any]:
             'uncompacted_count': len(uncompacted_entries),
             'compacted_count': len(compacted_entries),
             'memory_count': len(memory_entries),
+            'tool_result_fact_count': len(context_handler.get_tool_result_facts()),
         },
+    }
+
+
+def _serialize_tool_result_fact(fact: ToolResultFact) -> Dict[str, Any]:
+    """Serialize one compressed tool result for status snapshots.
+
+    The UI-facing snapshot keeps the compressed facts but omits raw evidence.
+    """
+    return {
+        'tool_name': fact.tool_name,
+        'summary': fact.summary,
+        'facts': list(fact.facts),
+        'status': fact.status,
+        'tool_call_id': fact.tool_call_id,
+        'tags': list(fact.tags),
     }
 
 
@@ -214,10 +257,12 @@ def build_agent_status_snapshot(agent: Agent, state_file: Path) -> Dict[str, Any
     backfill_agent_state_from_context(agent)
     context_snapshot = build_agent_context_snapshot(agent)
     context_handler = agent.context_manager
+    tool_result_facts = [_serialize_tool_result_fact(fact) for fact in context_handler.get_tool_result_facts()]
     return {
         'state': asdict(agent.agent_state),
         'state_text': agent._render_agent_state(),
         'context': context_snapshot,
+        'tool_result_facts': tool_result_facts,
         'active_ids': context_handler.get_active_ids_window(),
         'context_length': context_handler.context_len(),
         'context_mode': agent.context_mode,
@@ -231,6 +276,7 @@ def build_agent_status_snapshot(agent: Agent, state_file: Path) -> Dict[str, Any
             **context_snapshot.get('stats', {}),
             'active_count': len(context_handler.get_active_ids_window()),
             'context_length': context_handler.context_len(),
+            'tool_result_fact_count': len(tool_result_facts),
         },
     }
 
@@ -244,7 +290,12 @@ def backfill_agent_state_from_context(agent: Agent) -> None:
         if isinstance(entry, LLMContextCompacted):
             text = entry.abstract_msg
         elif isinstance(entry, LLMContext):
-            text = entry.content or " ".join(entry.tool_call_info or [])
+            text = (
+                entry.content
+                or entry.content_reasoning
+                or " ".join(entry.tool_result_facts or [])
+                or " ".join(entry.tool_call_info or [])
+            )
         else:
             continue
         summary = " ".join(str(text or "").split())

@@ -46,6 +46,7 @@ let currentUserConfigState = {
   effective_model: '',
   effective_api_base: '',
   effective_connector_type: 'litellm',
+  gzctf_enabled: false,
   gzctf_status_message: '',
   gzctf_has_cookie: false,
   gzctf_team: null,
@@ -275,15 +276,18 @@ async function logout() {
     effective_model: '',
     effective_api_base: '',
     effective_connector_type: 'litellm',
+    gzctf_enabled: false,
     gzctf_status_message: '',
     gzctf_has_cookie: false,
     gzctf_team: null,
   };
   setInputValue('apiKey', '');
   setInputValue('apiBase', '');
+  setCheckboxValue('gzctfEnabled', false);
   setInputValue('gzctfUsername', '');
   setInputValue('gzctfPassword', '');
   setInputValue('gzctfGameUrl', '');
+  toggleGzctfConfigInputs(false);
   updateGzctfStatusUi({});
   updateUserContextUi();
   renderTasks([]);
@@ -399,6 +403,51 @@ function setInputValue(id, value) {
   return true;
 }
 
+function setCheckboxValue(id, checked) {
+  const element = document.getElementById(id);
+  if (!element) {
+    return false;
+  }
+  element.checked = Boolean(checked);
+  return true;
+}
+
+function toggleGzctfConfigInputs(enabled) {
+  const isEnabled = Boolean(enabled);
+  const section = document.getElementById('gzctfConfigSection');
+  const controls = [
+    document.getElementById('gzctfUsername'),
+    document.getElementById('gzctfPassword'),
+    document.getElementById('gzctfGameUrl'),
+    document.getElementById('fetchGzctfTeamBtn'),
+  ];
+  controls.forEach(control => {
+    if (control) {
+      control.disabled = !isEnabled;
+    }
+  });
+  if (section) {
+    section.querySelectorAll('button').forEach(button => {
+      button.disabled = !isEnabled;
+    });
+  }
+  if (section) {
+    section.classList.toggle('config-section-disabled', !isEnabled);
+  }
+  const statusEl = document.getElementById('gzctfStatusText');
+  if (statusEl) {
+    statusEl.textContent = isEnabled
+      ? '已启用 GZCTF 设置，保存后生效'
+      : '未启用 GZCTF 设置';
+  }
+  const teamEl = document.getElementById('gzctfTeamText');
+  if (teamEl) {
+    teamEl.textContent = isEnabled
+      ? '保存后可获取队伍信息'
+      : '未启用 GZCTF 设置';
+  }
+}
+
 function applyUserContextHeaders(headers = {}) {
   return {
     ...applyAuthHeaders(headers),
@@ -445,8 +494,8 @@ function updateGzctfStatusUi(status = {}) {
   const cookieFile = String(status.gzctf_cookie_file || '').trim();
   const team = status.gzctf_team && typeof status.gzctf_team === 'object' ? status.gzctf_team : null;
   if (!configured) {
-    statusEl.textContent = '未配置 GZCTF 自动提交通道';
-    if (teamEl) teamEl.textContent = '尚未获取队伍信息';
+    statusEl.textContent = '未启用 GZCTF 设置';
+    if (teamEl) teamEl.textContent = '未启用 GZCTF 设置';
     return;
   }
   const cookieText = hasCookie ? 'Cookie 已保存' : 'Cookie 未保存';

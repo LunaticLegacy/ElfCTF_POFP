@@ -2467,8 +2467,10 @@ function normalizeTaskContextSnapshot(rawValue) {
           active: Boolean(item.active),
           role: String(item.role || '').trim(),
           content: String(item.content || '').trim(),
+          contentReasoning: String(item.content_reasoning || item.reasoning_content || '').trim(),
           toolCallInfo: Array.isArray(item.tool_call_info) ? item.tool_call_info.map(entry => String(entry || '').trim()).filter(Boolean) : [],
           toolCallResult: Array.isArray(item.tool_call_result) ? item.tool_call_result.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+          toolResultFacts: Array.isArray(item.tool_result_facts) ? item.tool_result_facts.map(entry => String(entry || '').trim()).filter(Boolean) : [],
           tags: Array.isArray(item.tags) ? item.tags.map(entry => String(entry || '').trim()).filter(Boolean) : [],
         }))
     : [];
@@ -2512,6 +2514,21 @@ function normalizeTaskContextSnapshot(rawValue) {
   };
 }
 
+function normalizeTaskToolResultFacts(rawValue) {
+  const source = Array.isArray(rawValue) ? rawValue : [];
+  return source
+    .filter(item => item && typeof item === 'object')
+    .map(item => ({
+      toolName: String(item.tool_name || item.toolName || '').trim(),
+      summary: String(item.summary || '').trim(),
+      facts: Array.isArray(item.facts) ? item.facts.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+      status: String(item.status || 'unknown').trim() || 'unknown',
+      toolCallId: String(item.tool_call_id || item.toolCallId || '').trim(),
+      tags: Array.isArray(item.tags) ? item.tags.map(entry => String(entry || '').trim()).filter(Boolean) : [],
+    }))
+    .filter(item => item.toolName || item.summary || item.facts.length);
+}
+
 function normalizeTaskAgentStatus(rawValue, fallbackContext) {
   const source = rawValue && typeof rawValue === 'object' ? rawValue : {};
   const rawState = source.state && typeof source.state === 'object' ? source.state : {};
@@ -2540,12 +2557,14 @@ function normalizeTaskAgentStatus(rawValue, fallbackContext) {
     contextLength: Number(source.context_length ?? rawStats.context_length ?? 0),
     nextContextId: Number(source.next_context_id ?? 0),
     toolCount: Number(source.tool_count ?? 0),
+    toolResultFacts: normalizeTaskToolResultFacts(source.tool_result_facts),
     persisted: Boolean(source.persisted),
     stateFile: String(source.state_file || '').trim(),
     updatedAt: Number(source.updated_at ?? 0),
     stats: {
       activeCount: Number(rawStats.active_count ?? 0),
       contextLength: Number(rawStats.context_length ?? source.context_length ?? 0),
+      toolResultFactCount: Number(rawStats.tool_result_fact_count ?? source.tool_result_facts?.length ?? 0),
     },
   };
 }
@@ -2703,6 +2722,13 @@ function renderTaskAgentStateSection(agentStatus) {
   const routes = Object.keys(state.knownRoutes || {})
     .map(key => `${key}: ${state.knownRoutes[key]}`);
   const artifactKeys = Object.keys(state.artifacts || {});
+  const toolResultFacts = Array.isArray(agentStatus.toolResultFacts) ? agentStatus.toolResultFacts : [];
+  const toolResultFactLines = toolResultFacts.map(item => {
+    const summary = item.summary || (item.facts || []).join(' · ') || '无摘要';
+    const toolName = item.toolName || 'unknown';
+    const status = item.status || 'unknown';
+    return `${toolName} · ${status} · ${summary}`;
+  });
   const metaRows = [
     ['任务', state.task || agentStatus.taskId || '未记录'],
     ['阶段', state.phase || 'initial'],
@@ -2728,6 +2754,7 @@ function renderTaskAgentStateSection(agentStatus) {
       ${renderList('不要重复', state.doNotRepeat, '当前还没有禁止重复动作。', 'chip')}
       ${renderList('已知路由', routes, '当前还没有记录路由。', 'chip')}
       ${renderList('Artifacts', artifactKeys, '当前还没有 Agent 内部 artifact。', 'chip')}
+      ${renderList('工具摘要', toolResultFactLines, '当前还没有记录工具摘要。', 'fact')}
     </section>
   `;
 }
@@ -2765,6 +2792,14 @@ function renderTaskContextSection(title, entries, kind) {
 function renderTaskContextEntry(entry, kind) {
   // Render raw uncompacted context entries with role, tags, and tool traces.
   if (kind === 'uncompacted') {
+    const reasoningHtml = entry.contentReasoning
+      ? `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">思考</div>
+          <pre class="task-thinking-code">${escapeHtml(entry.contentReasoning)}</pre>
+        </div>
+      `
+      : '';
     const toolInfoHtml = entry.toolCallInfo.length
       ? `
         <div class="task-thinking-subsection">
@@ -2781,6 +2816,14 @@ function renderTaskContextEntry(entry, kind) {
         </div>
       `
       : '';
+    const toolSummaryHtml = entry.toolResultFacts.length
+      ? `
+        <div class="task-thinking-subsection">
+          <div class="task-thinking-subtitle">工具摘要</div>
+          <pre class="task-thinking-code">${escapeHtml(entry.toolResultFacts.join('\n\n'))}</pre>
+        </div>
+      `
+      : '';
     return `
       <div class="task-context-card">
         <div class="task-context-card-head">
@@ -2789,8 +2832,10 @@ function renderTaskContextEntry(entry, kind) {
         </div>
         <div class="task-context-card-meta">timeline: ${escapeHtml(String(entry.timeline ?? entry.id ?? '无'))} · ${entry.active ? 'active' : 'inactive'}</div>
         <pre class="task-thinking-code">${escapeHtml(entry.content || '空内容')}</pre>
+        ${reasoningHtml}
         ${toolInfoHtml}
         ${toolResultHtml}
+        ${toolSummaryHtml}
       </div>
     `;
   }

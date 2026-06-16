@@ -60,6 +60,7 @@ class RuntimeConfig:
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
     connector_type: str = 'litellm'
+    gzctf_enabled: bool = False
     gzctf_username: str = ''
     gzctf_password: str = ''
     gzctf_game_url: str = ''

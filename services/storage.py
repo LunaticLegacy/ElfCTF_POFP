@@ -45,7 +45,12 @@ class JsonConfigStore:
         """Build a runtime config from a partial dictionary."""
         merged = RuntimeConfig().to_dict()
         merged.update(data or {})
-        return RuntimeConfig(**merged)
+        config = RuntimeConfig(**merged)
+        if not config.gzctf_enabled:
+            config.gzctf_username = ''
+            config.gzctf_password = ''
+            config.gzctf_game_url = ''
+        return config
 
     def get_user_config(self, user_id: str) -> RuntimeConfig:
         """Return a user's stored configuration."""

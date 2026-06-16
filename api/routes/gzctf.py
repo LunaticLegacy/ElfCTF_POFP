@@ -15,6 +15,7 @@ def _build_runtime_config_from_saved_and_payload(request: Request, payload: dict
     services = get_services(request)
     saved = services.config_handler.get_effective_config(user_id)
     merged = RuntimeConfig(**saved.to_dict())
+    provided_values = []
     overrides = {
         "gzctf_username": str(payload.get("gzctf_username", payload.get("username", ""))).strip(),
         "gzctf_password": str(payload.get("gzctf_password", payload.get("password", ""))),
@@ -23,6 +24,8 @@ def _build_runtime_config_from_saved_and_payload(request: Request, payload: dict
     for key, value in overrides.items():
         if value:
             setattr(merged, key, value)
+            provided_values.append(value)
+    merged.gzctf_enabled = bool(merged.gzctf_enabled or provided_values)
     return merged
 
 

@@ -155,6 +155,7 @@ class ConfigUpdateRequest:
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
     connector_type: str = 'litellm'
+    gzctf_enabled: bool = False
     gzctf_username: str = ''
     gzctf_password: str = ''
     gzctf_game_url: str = ''
@@ -196,6 +197,7 @@ class ConfigUpdateRequest:
             long_term_memory_enabled=_coerce_bool(payload.get('long_term_memory_enabled'), True),
             show_terminal_output=show_terminal_output,
             connector_type=connector_type,
+            gzctf_enabled=_coerce_bool(payload.get('gzctf_enabled'), False),
             gzctf_username=str(payload.get('gzctf_username', '')).strip(),
             gzctf_password=str(payload.get('gzctf_password', '')),
             gzctf_game_url=str(payload.get('gzctf_game_url', '')).strip(),

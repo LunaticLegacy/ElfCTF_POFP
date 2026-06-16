@@ -16,7 +16,8 @@ asyncpg
 
 # knowledge database
 chromadb
-# sentence-transformers     # I dont need this lib for it will call cuda.
+sentence-transformers
+markdown-it-py
 
 # mcp
 mcp>=1.10.0

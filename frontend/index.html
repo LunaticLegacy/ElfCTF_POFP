@@ -202,8 +202,15 @@
                 </label>
               </div>
             </div>
-            <div class="config-section">
-              <div class="config-section-title">GZCTF 自动提交</div>
+            <div class="config-section" id="gzctfConfigSection">
+              <div class="config-section-title">
+                <span>GZCTF 自动提交</span>
+                <label class="model-manual-toggle config-section-toggle">
+                  <input type="checkbox" id="gzctfEnabled" onchange="toggleGzctfConfigInputs(this.checked)">
+                  <span>启用 GZCTF 设置</span>
+                </label>
+              </div>
+              <div class="model-config-meta" id="gzctfSectionHint">仅在启用后才会保存和使用这组配置</div>
               <div class="form-group">
                 <label>GZCTF 账号</label>
                 <input class="form-input" type="text" id="gzctfUsername" placeholder="比赛账号">
@@ -222,8 +229,8 @@
               <div class="detail-actions" style="margin-top:4px;">
                 <button class="mbtn mbtn-s" type="button" id="fetchGzctfTeamBtn" onclick="onFetchGzctfTeamClick(this)">获取队伍</button>
               </div>
-              <div class="model-config-meta" id="gzctfStatusText">未配置 GZCTF 自动提交通道</div>
-              <div class="model-config-meta" id="gzctfTeamText">尚未获取队伍信息</div>
+              <div class="model-config-meta" id="gzctfStatusText">未启用 GZCTF 设置</div>
+              <div class="model-config-meta" id="gzctfTeamText">未启用 GZCTF 设置</div>
             </div>
           </div>
         </div>

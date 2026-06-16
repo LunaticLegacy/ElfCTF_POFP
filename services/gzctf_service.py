@@ -32,6 +32,8 @@ class GZCTFService:
 
     def is_configured(self, config: RuntimeConfig) -> bool:
         """Return whether all fields required for auto-submit are present."""
+        if not bool(config.gzctf_enabled):
+            return False
         return all((
             str(config.gzctf_username).strip(),
             str(config.gzctf_password),
@@ -40,6 +42,8 @@ class GZCTFService:
 
     def has_partial_config(self, config: RuntimeConfig) -> bool:
         """Return whether the config contains some but not all GZCTF fields."""
+        if not bool(config.gzctf_enabled):
+            return False
         values = [
             str(config.gzctf_username).strip(),
             str(config.gzctf_password),
@@ -49,6 +53,8 @@ class GZCTFService:
 
     def validate_config(self, config: RuntimeConfig) -> None:
         """Ensure the config is either empty or fully specified."""
+        if not bool(config.gzctf_enabled):
+            return
         if self.has_partial_config(config):
             raise ValueError('GZCTF 配置需要同时填写账号、密码和比赛链接，或全部留空')
         if self.is_configured(config):
@@ -57,11 +63,10 @@ class GZCTFService:
     def get_status(self, user_id: str, config: RuntimeConfig) -> Dict[str, Any]:
         """Return non-secret GZCTF status fields for the settings UI."""
         cookie_path = self.get_cookie_path()
-        configured = self.is_configured(config)
         return {
-            'gzctf_enabled': configured,
+            'gzctf_enabled': bool(config.gzctf_enabled),
             'gzctf_cookie_file': str(cookie_path),
-            'gzctf_has_cookie': cookie_path.is_file(),
+            'gzctf_has_cookie': bool(config.gzctf_enabled and cookie_path.is_file()),
             'gzctf_game_url': str(config.gzctf_game_url or '').strip(),
         }
 
@@ -85,7 +90,7 @@ class GZCTFService:
             return {
                 **self.get_status(user_id, config),
                 'gzctf_login_ok': False,
-                'gzctf_status_message': '未配置 GZCTF 自动提交通道',
+                'gzctf_status_message': '未启用 GZCTF 设置',
             }
 
         base_url, game_id = self.parse_game_url(config.gzctf_game_url)
@@ -360,7 +365,7 @@ class GZCTFService:
             return {
                 **self.get_status(user_id, config),
                 'gzctf_login_ok': False,
-                'gzctf_status_message': '未配置 GZCTF 自动提交通道',
+                'gzctf_status_message': '未启用 GZCTF 设置',
                 'gzctf_team': None,
             }
 

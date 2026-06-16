@@ -30,7 +30,20 @@ class KnowledgeService:
 
     def vector_status(self) -> JsonObject:
         """Return vector index status for the current knowledge backend."""
-        return {'available': bool(self.knowledge_base and self.knowledge_base.available())}
+        if self.knowledge_base is None:
+            return {
+                'available': False,
+                'entry_count': 0,
+                'chunk_count': 0,
+                'backend_ready': False,
+                'query_mode': 'keyword_fallback',
+                'dependencies_installed': False,
+                'dependency_error': '',
+                'last_error': '',
+            }
+        payload = dict(self.knowledge_base.vector_status())
+        payload['available'] = bool(self.knowledge_base.available())
+        return payload
 
     def rebuild_vector_index(self) -> JsonObject:
         """Rebuild vector indexes when supported by the backend."""

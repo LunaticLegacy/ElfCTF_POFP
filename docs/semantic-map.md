@@ -133,6 +133,16 @@ The backend is split into three layers:
 - Calls: `urllib.request.urlopen`, `urllib.error.HTTPError`, `urllib.error.URLError`, `urllib.parse.urlparse`.
 - Called by: `api.routes.models.get_models`.
 
+### `demo.llm_context_index_demo`
+
+- Responsibility: Build a deterministic mix of raw and compacted mock contexts, index them, and print keyword/semantic retrieval results for the local demo script.
+- Key behaviors:
+  - seeds a small hardware-analysis conversation history without requiring a live backend
+  - includes both raw `LLMContext` entries and compacted `LLMContextCompacted` summaries
+  - demonstrates coarse keyword candidates, tag candidates, and semantic nearest-neighbour hits
+- Calls: `modules.llmfetcher.llm_context.ContextIndex.index_context`, `modules.llmfetcher.llm_context.ContextSemanticIndex.index_context`, `modules.llmfetcher.llm_context.ContextIndex.candidate_text_ids`, `modules.llmfetcher.llm_context.ContextIndex.candidate_tag_ids`, `modules.llmfetcher.llm_context.ContextSemanticIndex.search`.
+- Called by: direct script execution.
+
 ## Classes
 
 ### `core.ctf_kernel._TaskTokenUsageTracker`
@@ -434,6 +444,35 @@ The backend is split into three layers:
 - Base classes: `None`.
 - Known subclasses: `None observed`.
 - Behavior pattern: Stores semantic documents and embeddings in memory, prefers an ephemeral Chroma collection when available, and falls back to a deterministic pure-Python embedding cache when optional vector dependencies or model weights are unavailable.
+
+#### `demo.llm_context_index_demo.build_mock_contexts`
+
+- Signature: `build_mock_contexts() -> list[LLMInfo]`
+- Purpose: Build a deterministic mock conversation history composed of raw chat/tool entries and compacted summaries.
+- Returns: Ordered list of demo context entries used by the script.
+- Side effects: None.
+- Calls: `modules.llmfetcher.llm_types.LLMContext`, `modules.llmfetcher.llm_types.LLMContextCompacted`.
+- Called by: `demo.llm_context_index_demo.test_for_context_index`.
+
+#### `demo.llm_context_index_demo.print_contexts`
+
+- Signature: `print_contexts(title: str, contexts: Iterable[LLMInfo]) -> None`
+- Purpose: Render an iterable of context entries in a compact bullet-list form for the demo output.
+- Parameters:
+  - `title`: Section heading printed before the entries.
+  - `contexts`: Context entries to render.
+- Returns: `None`.
+- Side effects: Writes to stdout.
+- Called by: `demo.llm_context_index_demo.test_for_context_index`.
+
+#### `demo.llm_context_index_demo.test_for_context_index`
+
+- Signature: `test_for_context_index() -> None`
+- Purpose: Index the demo contexts, then print the derived postings and retrieval results for keyword, tag, and semantic queries.
+- Returns: `None`.
+- Side effects: Writes to stdout and exercises both the textual and semantic context indexes.
+- Calls: `demo.llm_context_index_demo.build_mock_contexts`, `demo.llm_context_index_demo.print_contexts`, `modules.llmfetcher.llm_context.ContextIndex.index_context`, `modules.llmfetcher.llm_context.ContextSemanticIndex.index_context`, `modules.llmfetcher.llm_context.ContextIndex.candidate_text_ids`, `modules.llmfetcher.llm_context.ContextIndex.candidate_tag_ids`, `modules.llmfetcher.llm_context.ContextSemanticIndex.search`.
+- Called by: the script's `__main__` entry point.
 
 ## Functions
 

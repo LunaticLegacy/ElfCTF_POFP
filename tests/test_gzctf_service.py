@@ -22,10 +22,25 @@ class GZCTFServiceTest(unittest.TestCase):
         self.assertEqual(base, 'https://gz.example.com')
         self.assertEqual(game_id, 33)
 
-    def test_validate_config_rejects_partial_values(self) -> None:
-        config = RuntimeConfig(gzctf_username='user', gzctf_password='', gzctf_game_url='https://gz.example.com/games/1')
+    def test_validate_config_rejects_partial_values_when_enabled(self) -> None:
+        config = RuntimeConfig(
+            gzctf_enabled=True,
+            gzctf_username='user',
+            gzctf_password='',
+            gzctf_game_url='https://gz.example.com/games/1',
+        )
         with self.assertRaises(ValueError):
             self.service.validate_config(config)
+
+    def test_validate_config_ignores_partial_values_when_disabled(self) -> None:
+        config = RuntimeConfig(
+            gzctf_enabled=False,
+            gzctf_username='user',
+            gzctf_password='',
+            gzctf_game_url='https://gz.example.com/games/1',
+        )
+        self.service.validate_config(config)
+        self.assertFalse(self.service.is_configured(config))
 
     def test_resolve_challenge_prefers_target_challenge_id(self) -> None:
         details = {
