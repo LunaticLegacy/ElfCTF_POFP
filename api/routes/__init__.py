@@ -5,6 +5,7 @@ from fastapi import APIRouter
 from .. import (
     auth_router,
     background_router,
+    codegen_router,
     config_router,
     gzctf_router,
     knowledge_router,
@@ -16,12 +17,13 @@ from .. import (
 )
 
 # Import route modules after router creation so decorators can bind endpoints.
-from . import auth, background, config, gzctf, knowledge, mcp, models, skills, tasks, temp_mcp, tools, user_mcp
+from . import auth, background, codegen, config, gzctf, knowledge, mcp, models, skills, tasks, temp_mcp, tools, user_mcp
 
 api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(config_router)
 api_router.include_router(models_router)
+api_router.include_router(codegen_router)
 api_router.include_router(tasks_router)
 api_router.include_router(mcp_router)
 api_router.include_router(tools_router)
@@ -41,5 +43,6 @@ __all__ = [
     'skills_router',
     'knowledge_router',
     'background_router',
+    'codegen_router',
     'gzctf_router',
 ]
