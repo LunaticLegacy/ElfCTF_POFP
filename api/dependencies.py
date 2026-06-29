@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from core.json_types import JsonValue
 from .schemas import ApiEnvelope
 from services.container import ApplicationServices
+from services.auth_service import AuthTokenRecord
 
 
 def get_services(request: Request) -> ApplicationServices:
@@ -94,6 +95,26 @@ def get_request_user_id(request: Request) -> str:
     if user is None:
         raise PermissionError('未登录或登录状态已失效')
     return user.username
+
+
+def get_request_token_record(request: Request) -> AuthTokenRecord:
+    """Resolve the authenticated token record from the current request.
+
+    Args:
+        request: Current FastAPI request with auth headers and app state.
+
+    Returns:
+        The resolved token record containing expiry, type, and scope metadata.
+
+    Raises:
+        PermissionError: If the token is missing, invalid, or expired.
+    """
+    services = get_services(request)
+    token = get_request_auth_token(request)
+    record = services.auth.get_token_record(token)
+    if record is None:
+        raise PermissionError('未登录或登录状态已失效')
+    return record
 
 
 def require_auth_dependency(request: Request) -> str:

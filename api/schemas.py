@@ -113,6 +113,43 @@ class AuthRequest:
 
 
 @dataclass
+class AuthTokenCreateRequest:
+    """Normalize a platform token issuance request.
+
+    Attributes:
+        username: Username used to authenticate the token request.
+        password: Plaintext password used to authenticate the token request.
+        label: Optional human-readable label attached to the issued token.
+        scopes: Optional requested scopes; empty means server defaults.
+    """
+
+    username: str = ''
+    password: str = ''
+    label: str = ''
+    scopes: List[str] = None
+
+    @classmethod
+    def from_payload(cls, data: Optional[Dict[str, Any]]) -> 'AuthTokenCreateRequest':
+        """Create a token issuance request from arbitrary JSON data.
+
+        Args:
+            data: Raw request body parsed from JSON.
+
+        Returns:
+            A normalized token issuance dataclass suitable for auth routes.
+        """
+        payload = data or {}
+        raw_scopes = payload.get('scopes', [])
+        scopes = raw_scopes if isinstance(raw_scopes, list) else []
+        return cls(
+            username=str(payload.get('username', '')).strip(),
+            password=str(payload.get('password', '')),
+            label=str(payload.get('label', '')).strip(),
+            scopes=[str(scope).strip() for scope in scopes if str(scope).strip()],
+        )
+
+
+@dataclass
 class ConfigUpdateRequest:
     """Represent user-submitted LLM configuration updates.
 

@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api import api_router
+from api.dependencies import api_response
 from services import create_services
 
 def create_app(data_dir: str | Path = '.elfctf') -> FastAPI:
@@ -24,6 +25,19 @@ def create_app(data_dir: str | Path = '.elfctf') -> FastAPI:
     app = FastAPI(title='ElfCTF', version='0.1.0')
     app.state.pofp_services = create_services(data_dir)
     app.state.services = app.state.pofp_services
+
+    @app.exception_handler(PermissionError)
+    async def handle_permission_error(_request, exc: PermissionError):
+        """Translate auth-layer permission failures into normalized 401 responses.
+
+        Args:
+            _request: Incoming request handled by FastAPI.
+            exc: Permission error raised by auth dependencies.
+
+        Returns:
+            Shared API envelope describing the authentication failure.
+        """
+        return api_response(False, message=str(exc) or '未登录或登录状态已失效', status_code=401)
 
     # Allow local frontend development while keeping the backend self-contained.
     app.add_middleware(

@@ -6,8 +6,8 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from . import auth_router
-from ..dependencies import api_response, get_request_auth_token, get_services
-from ..schemas import AuthRequest
+from ..dependencies import api_response, get_request_auth_token, get_request_token_record, get_services
+from ..schemas import AuthRequest, AuthTokenCreateRequest
 from services.auth_service import AuthError
 
 
@@ -77,6 +77,10 @@ def login(request: Request, payload: AuthRequest) -> JSONResponse:
                 'created_at': session.user.created_at,
             },
             'expires_at': session.expires_at,
+            'created_at': session.created_at,
+            'token_type': session.token_type,
+            'scopes': list(session.scopes),
+            'label': session.label,
             'has_users': True,
         },
         message='登录成功',
@@ -135,6 +139,97 @@ def me(request: Request) -> JSONResponse:
             },
         },
     )
+
+
+@auth_router.post('/auth/tokens')
+def create_platform_token(request: Request, payload: AuthTokenCreateRequest) -> JSONResponse:
+    """Issue a platform bearer token intended for plugin or CLI clients.
+
+    Args:
+        request: Current FastAPI request used to access shared services.
+        payload: Username/password request body plus optional label and scopes.
+
+    Returns:
+        A normalized API response containing issued token metadata.
+    """
+    services = get_services(request)
+    normalized_payload = AuthTokenCreateRequest.from_payload(payload.__dict__)
+    try:
+        token_record = services.auth.issue_plugin_token(
+            normalized_payload.username,
+            normalized_payload.password,
+            label=normalized_payload.label or 'VS Code codetalk',
+            scopes=normalized_payload.scopes,
+        )
+    except AuthError as exc:
+        return api_response(False, message=str(exc), status_code=401)
+
+    return api_response(
+        True,
+        data={
+            'token': token_record.token,
+            'token_type': token_record.token_type,
+            'expires_at': token_record.expires_at,
+            'created_at': token_record.created_at,
+            'label': token_record.label,
+            'scopes': list(token_record.scopes),
+            'user': {
+                'id': token_record.user.id,
+                'username': token_record.user.username,
+                'created_at': token_record.user.created_at,
+            },
+        },
+        message='平台令牌已签发',
+    )
+
+
+@auth_router.get('/auth/tokens/current')
+def inspect_current_token(request: Request) -> JSONResponse:
+    """Inspect the current bearer token for plugin validation flows.
+
+    Args:
+        request: Current FastAPI request containing authentication headers.
+
+    Returns:
+        A normalized API response containing current token metadata.
+    """
+    token_record = get_request_token_record(request)
+    return api_response(
+        True,
+        data={
+            'authenticated': True,
+            'token_type': token_record.token_type,
+            'expires_at': token_record.expires_at,
+            'created_at': token_record.created_at,
+            'label': token_record.label,
+            'scopes': list(token_record.scopes),
+            'user': {
+                'id': token_record.user.id,
+                'username': token_record.user.username,
+                'created_at': token_record.user.created_at,
+            },
+        },
+    )
+
+
+@auth_router.post('/auth/tokens/revoke')
+def revoke_current_token(request: Request) -> JSONResponse:
+    """Revoke the bearer token supplied on the current request.
+
+    Args:
+        request: Current FastAPI request containing authentication headers.
+
+    Returns:
+        A normalized API response indicating whether revocation occurred.
+    """
+    token = get_request_auth_token(request)
+    if not token:
+        return api_response(False, message='缺少访问令牌', status_code=400)
+    services = get_services(request)
+    revoked = services.auth.revoke_token(token)
+    if not revoked:
+        return api_response(False, message='访问令牌不存在或已失效', status_code=404)
+    return api_response(True, message='访问令牌已撤销')
 
 
 @auth_router.get('/auth/debug/sessions')
