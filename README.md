@@ -80,6 +80,13 @@ The long-term solution is the Angelus-based replacement, not another large refac
 
 - QQ group / QQ 群：`1061368718`
 
+Scan either QR code to join / 扫描任一二维码加入：
+
+<p align="center">
+  <img src="docs/qq_groups/010725179c92092691d8d6e5f9dfe80d_720.jpg" alt="POFP QQ group QR code 1" width="45%" />
+  <img src="docs/qq_groups/f863c34a65372e952455a18521f78a66.jpg" alt="POFP QQ group QR code 2" width="45%" />
+</p>
+
 ## Running the legacy version / 运行旧版
 
 Clone the repository with submodules, create a virtual environment, install dependencies, then start FastAPI:
