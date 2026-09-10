@@ -525,6 +525,7 @@ async def update_task(request: Request, task_id: str) -> JSONResponse:
         workflow_kind=update_request.workflow_kind,
         task_mode=update_request.task_mode,
         execution_mode=update_request.execution_mode,
+        context_mode=update_request.context_mode,
         learning_mode=update_request.learning_mode,
         learning_search_rounds=learning_limits['search_rounds'] if learning_limits is not None else None,
         learning_results_per_query=learning_limits['results_per_query'] if learning_limits is not None else None,

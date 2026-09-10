@@ -299,10 +299,11 @@ async function onSaveConfigClick() {
   const apiKey = document.getElementById('apiKey').value;
   const apiBase = document.getElementById('apiBase').value;
   const model = document.getElementById('modelSelect').value;
+  const agentStateMachineEnabled = Boolean(document.getElementById('agentStateMachineToggle')?.checked);
   
   const result = await apiRequest(`${API_BASE}/config`, {
     method: 'POST',
-    body: JSON.stringify({ api_key: apiKey, api_base: apiBase, model })
+    body: JSON.stringify({ api_key: apiKey, api_base: apiBase, model, agent_state_machine_enabled: agentStateMachineEnabled })
   });
   
   if (result.success) {

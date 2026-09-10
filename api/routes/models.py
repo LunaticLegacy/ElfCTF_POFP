@@ -27,7 +27,7 @@ def get_models(request: Request, payload: ModelsRequest) -> JSONResponse:
     api_key = request_data.api_key or effective_config.api_key
     api_base = request_data.api_base or effective_config.api_base
     if not api_key:
-        return api_response(False, message='请输入API密钥，或为服务器配置兜底 API', status_code=400)
+        return api_response(False, message='请输入API密钥，或为服务器配置兜底API', status_code=400)
 
     # Ask the LLM client for model metadata and translate service status to HTTP.
     result = services.llm_client.fetch_models(api_key, api_base, request_data.connector_type)

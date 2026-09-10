@@ -40,6 +40,7 @@ const taskDetailNewInputFeedbackTimers = new Map();
 let taskCreateUploadState = { active: false, progress: 0, label: '' };
 let currentAuthToken = localStorage.getItem('pofp_auth_token') || '';
 let currentUsername = localStorage.getItem('pofp_auth_username') || '';
+let currentPlatformAccessToken = '';
 let currentUserConfigState = {
   has_server_fallback: false,
   using_server_fallback: false,
@@ -47,6 +48,7 @@ let currentUserConfigState = {
   effective_api_base: '',
   effective_connector_type: 'litellm',
   gzctf_enabled: false,
+  agent_state_machine_enabled: true,
   gzctf_status_message: '',
   gzctf_has_cookie: false,
   gzctf_team: null,
@@ -84,6 +86,10 @@ function getCurrentUsername() {
   return currentUsername;
 }
 
+function getCurrentPlatformAccessToken() {
+  return currentPlatformAccessToken;
+}
+
 function applyAuthHeaders(headers = {}) {
   const nextHeaders = { ...headers };
   if (currentAuthToken) {
@@ -95,6 +101,9 @@ function applyAuthHeaders(headers = {}) {
 function setAuthenticatedUser(token, username) {
   currentAuthToken = String(token || '').trim();
   currentUsername = normalizeUsername(username);
+  currentPlatformAccessToken = currentUsername
+    ? (localStorage.getItem(getUserStorageKey('platform_access_token')) || '').trim()
+    : '';
   if (currentAuthToken) {
     localStorage.setItem('pofp_auth_token', currentAuthToken);
   } else {
@@ -133,6 +142,18 @@ function clearAuthenticatedUser() {
   setAuthenticatedUser('', '');
 }
 
+function setPlatformAccessToken(token) {
+  currentPlatformAccessToken = String(token || '').trim();
+  if (currentUsername) {
+    if (currentPlatformAccessToken) {
+      localStorage.setItem(getUserStorageKey('platform_access_token'), currentPlatformAccessToken);
+    } else {
+      localStorage.removeItem(getUserStorageKey('platform_access_token'));
+    }
+  }
+  updateUserContextUi();
+}
+
 function isAuthenticated() {
   return Boolean(currentAuthToken && currentUsername);
 }
@@ -150,6 +171,8 @@ function updateUserContextUi() {
   const authActionBtn = document.getElementById('authActionBtn');
   const logoutBtn = document.getElementById('logoutBtn');
   const scopeHint = document.getElementById('configScopeHint');
+  const identity = document.getElementById('userMenuIdentity');
+  const tokenHint = document.getElementById('userMenuTokenHint');
 
   if (badge) {
     badge.textContent = isAuthenticated() ? currentUsername : '未登录';
@@ -159,6 +182,14 @@ function updateUserContextUi() {
   }
   if (logoutBtn) {
     logoutBtn.style.display = isAuthenticated() ? 'inline-flex' : 'none';
+  }
+  if (identity) {
+    identity.textContent = isAuthenticated() ? currentUsername : '未登录';
+  }
+  if (tokenHint) {
+    tokenHint.textContent = currentPlatformAccessToken
+      ? 'Platform Token 已缓存，可用于 codetalk / VS Code'
+      : 'Platform Token 未配置';
   }
   if (scopeHint) {
     if (!isAuthenticated()) {
@@ -171,6 +202,16 @@ function updateUserContextUi() {
       scopeHint.textContent = '当前登录账号没有可用的服务器兜底 API，请保存自己的系统设置。';
     }
   }
+}
+
+function toggleUserMenu(event) {
+  event?.stopPropagation();
+  const shell = document.getElementById('userMenuShell');
+  shell?.classList.toggle('open');
+}
+
+function closeUserMenu() {
+  document.getElementById('userMenuShell')?.classList.remove('open');
 }
 
 function openAuthModal(mode = 'login') {
@@ -269,6 +310,8 @@ async function logout() {
     skipAuthRedirect: true,
   });
   closeAuthModal();
+  closePlatformTokenModal();
+  closeUserMenu();
   clearAuthenticatedUser();
   currentUserConfigState = {
     has_server_fallback: false,
@@ -277,6 +320,7 @@ async function logout() {
     effective_api_base: '',
     effective_connector_type: 'litellm',
     gzctf_enabled: false,
+    agent_state_machine_enabled: true,
     gzctf_status_message: '',
     gzctf_has_cookie: false,
     gzctf_team: null,
@@ -288,6 +332,7 @@ async function logout() {
   setInputValue('gzctfPassword', '');
   setInputValue('gzctfGameUrl', '');
   toggleGzctfConfigInputs(false);
+  setCheckboxValue('agentStateMachineToggle', true);
   updateGzctfStatusUi({});
   updateUserContextUi();
   renderTasks([]);
@@ -295,6 +340,174 @@ async function logout() {
   stopTaskRefresh();
   addLog('warn', '已退出登录');
   openAuthModal('login');
+}
+
+function openPlatformTokenModal() {
+  if (!ensureAuthenticated()) return;
+  closeUserMenu();
+  setInputValue('platformTokenUsername', currentUsername);
+  setInputValue('platformTokenLabel', getInputValue('platformTokenLabel').trim() || 'VS Code codetalk');
+  setInputValue('platformTokenPassword', '');
+  setInputValue('platformTokenValue', currentPlatformAccessToken || '');
+  setPlatformTokenError('');
+  document.getElementById('platformTokenModal')?.classList.add('show');
+  if (currentPlatformAccessToken) {
+    void inspectPlatformToken();
+  } else {
+    updatePlatformTokenMeta('尚未签发平台 Token');
+  }
+}
+
+function closePlatformTokenModal(event) {
+  if (!event || event.target === document.getElementById('platformTokenModal')) {
+    document.getElementById('platformTokenModal')?.classList.remove('show');
+  }
+}
+
+function setPlatformTokenError(message = '') {
+  const errorEl = document.getElementById('platformTokenError');
+  const errorText = document.getElementById('platformTokenErrorText');
+  if (!errorEl || !errorText) return;
+  const normalized = String(message || '').trim();
+  if (!normalized) {
+    errorEl.style.display = 'none';
+    errorText.textContent = '';
+    return;
+  }
+  errorText.textContent = normalized;
+  errorEl.style.display = 'flex';
+}
+
+function updatePlatformTokenMeta(text) {
+  const meta = document.getElementById('platformTokenMeta');
+  if (meta) {
+    meta.textContent = text;
+  }
+}
+
+async function platformTokenRequest(path, token, options = {}) {
+  const requestToken = String(token || '').trim();
+  if (!requestToken) {
+    return { success: false, message: '当前没有可用的平台 Token' };
+  }
+  const isFormData = options.body instanceof FormData;
+  const headers = isFormData ? { ...(options.headers || {}) } : {
+    'Content-Type': 'application/json',
+    ...(options.headers || {}),
+  };
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers: {
+        ...headers,
+        Authorization: `Bearer ${requestToken}`,
+      },
+    });
+    return await response.json();
+  } catch (error) {
+    console.error('平台 Token 请求失败:', error);
+    return { success: false, message: error.message };
+  }
+}
+
+async function createPlatformToken() {
+  if (!ensureAuthenticated()) return;
+  const password = getInputValue('platformTokenPassword').trim();
+  const label = getInputValue('platformTokenLabel').trim() || 'VS Code codetalk';
+  const createBtn = document.getElementById('platformTokenCreateBtn');
+  if (!password) {
+    setPlatformTokenError('请输入当前账号密码');
+    return;
+  }
+  setPlatformTokenError('');
+  if (createBtn) {
+    createBtn.disabled = true;
+    createBtn.textContent = '签发中...';
+  }
+  const result = await apiRequest(`${API_BASE}/auth/tokens`, {
+    method: 'POST',
+    body: JSON.stringify({
+      username: currentUsername,
+      password,
+      label,
+    }),
+  });
+  if (createBtn) {
+    createBtn.disabled = false;
+    createBtn.textContent = '签发 Token';
+  }
+  if (!result.success) {
+    setPlatformTokenError(result.message || '平台 Token 签发失败');
+    return;
+  }
+  const token = String(result.data?.token || '').trim();
+  setPlatformAccessToken(token);
+  setInputValue('platformTokenValue', token);
+  setInputValue('platformTokenPassword', '');
+  updatePlatformTokenMeta(`已签发 ${result.data?.label || '平台 Token'} · 到期 ${formatDateTime(result.data?.expires_at)}`);
+  addLog('ok', '已签发平台 Token');
+}
+
+async function inspectPlatformToken() {
+  if (!ensureAuthenticated()) return;
+  const token = getCurrentPlatformAccessToken() || getInputValue('platformTokenValue').trim();
+  if (!token) {
+    setPlatformTokenError('当前没有可校验的平台 Token');
+    return;
+  }
+  setPlatformTokenError('');
+  const result = await platformTokenRequest('/auth/tokens/current', token, { method: 'GET' });
+  if (!result.success) {
+    setPlatformTokenError(result.message || '平台 Token 校验失败');
+    updatePlatformTokenMeta('平台 Token 校验失败');
+    return;
+  }
+  setPlatformAccessToken(token);
+  setInputValue('platformTokenValue', token);
+  const user = result.data?.user?.username || currentUsername;
+  const label = result.data?.label || result.data?.token_type || 'platform token';
+  const scopes = Array.isArray(result.data?.scopes) ? result.data.scopes.join(', ') : '-';
+  updatePlatformTokenMeta(`${user} · ${label} · scopes: ${scopes} · 到期 ${formatDateTime(result.data?.expires_at)}`);
+}
+
+async function copyPlatformToken() {
+  const token = getCurrentPlatformAccessToken() || getInputValue('platformTokenValue').trim();
+  if (!token) {
+    setPlatformTokenError('当前没有可复制的平台 Token');
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(token);
+    setPlatformTokenError('');
+    updatePlatformTokenMeta('已复制平台 Token 到剪贴板');
+  } catch (error) {
+    setPlatformTokenError(`复制失败: ${error.message}`);
+  }
+}
+
+function clearStoredPlatformToken() {
+  setPlatformAccessToken('');
+  setInputValue('platformTokenValue', '');
+  setPlatformTokenError('');
+  updatePlatformTokenMeta('已清空本地缓存的平台 Token');
+}
+
+async function revokePlatformToken() {
+  if (!ensureAuthenticated()) return;
+  const token = getCurrentPlatformAccessToken() || getInputValue('platformTokenValue').trim();
+  if (!token) {
+    setPlatformTokenError('当前没有可撤销的平台 Token');
+    return;
+  }
+  setPlatformTokenError('');
+  const result = await platformTokenRequest('/auth/tokens/revoke', token, { method: 'POST' });
+  if (!result.success) {
+    setPlatformTokenError(result.message || '平台 Token 撤销失败');
+    return;
+  }
+  clearStoredPlatformToken();
+  updatePlatformTokenMeta('平台 Token 已撤销');
+  addLog('warn', '已撤销平台 Token');
 }
 
 function ensureAuthenticated() {

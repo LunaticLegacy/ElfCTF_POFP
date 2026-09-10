@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 
 from core.json_types import JsonObject
-from modules.llmfetcher import Agent, LLMFetcher, create_shell_tools
+from modules.llmfetcher import Agent, LLMFetcher, UsageTrackingFetcher, create_shell_tools
 from modules.llmfetcher.tools.workflow_tool import create_workflow_tool
 from modules.llmfetcher.llm_types import LLMBackendConfig, LLMOutput
 from core.ctf_obscura_tools import create_obscura_tools
@@ -30,7 +30,7 @@ from .ctf_prompt import build_ctf_compression_profile, build_ctf_system_prompt, 
 # These symbols originally lived in this module and were extracted
 # into separate files in the core/ package.
 from .ctf_io import ThreadLocalStreamRouter, ThreadScopedStdIORedirect, TaskVerboseLogWriter  # noqa: F401
-from .ctf_token_tracker import TaskTokenUsageTracker, UsageTrackingFetcher  # noqa: F401
+from .ctf_token_tracker import TaskTokenUsageTracker  # noqa: F401
 from .ctf_agent_persistence import (  # noqa: F401
     serialize_agent, restore_agent, persist_agent, load_agent,
     build_agent_context_snapshot, build_agent_status_snapshot,
@@ -315,7 +315,7 @@ class CTFWorkflowService:
         agent = Agent(
             llm_handler=fetcher,
             system_prompt=self._base_system_prompt(task, workspace),
-            use_state=False,
+            use_state=bool(runtime_config.agent_state_machine_enabled),
             tools=[],
             max_concurrent_tools=4,
             compression_profile=compression_profile,
@@ -370,6 +370,7 @@ class CTFWorkflowService:
         if hasattr(agent, 'state_machine'):
             agent.state_machine.llm_handler = fetcher
         agent.llm_context_handler.llm_handler = fetcher
+        agent.use_state = bool(runtime_config.agent_state_machine_enabled)
 
         agent.update_system_prompt(system_prompt)
         agent.context_mode = 'graph' if task.config.context_mode == 'graph' else 'linear'

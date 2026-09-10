@@ -39,6 +39,7 @@ class RuntimeConfig:
         emergency_compress_ratio: Threshold for emergency compression.
         long_term_memory_enabled: Whether long-term memory should be used.
         show_terminal_output: Whether agent verbose stdout/stderr should be mirrored to the server terminal.
+        agent_state_machine_enabled: Whether the agent should run the state-machine helper on each round.
         connector_type: Connector family selected by the user.
     """
 
@@ -59,6 +60,7 @@ class RuntimeConfig:
     emergency_compress_ratio: float = 0.95
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
+    agent_state_machine_enabled: bool = True
     connector_type: str = 'litellm'
     gzctf_enabled: bool = False
     gzctf_username: str = ''
@@ -156,7 +158,7 @@ class CTFTaskConfig:
         workflow_kind: Workflow type, such as solve or scan.
         task_mode: Interaction mode selected by the UI.
         execution_mode: Single-agent or fan-out execution preference.
-        context_mode: Immutable context assembly mode selected at task creation.
+        context_mode: Context assembly mode for this task; editable after creation.
         learning_mode: Knowledge learning behavior.
         learning_search_rounds: Search rounds for learning mode.
         learning_results_per_query: Search result count for learning mode.

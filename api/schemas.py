@@ -171,6 +171,7 @@ class ConfigUpdateRequest:
         emergency_compress_ratio: Ratio that triggers emergency compression.
         long_term_memory_enabled: Whether long-term memory is enabled.
         show_terminal_output: Whether agent verbose stdout/stderr should be mirrored to the server terminal.
+        agent_state_machine_enabled: Whether the agent should run the state-machine helper on each round.
         connector_type: Normalized LLM connector type.
     """
 
@@ -191,6 +192,7 @@ class ConfigUpdateRequest:
     emergency_compress_ratio: float = 0.95
     long_term_memory_enabled: bool = True
     show_terminal_output: bool = True
+    agent_state_machine_enabled: bool = True
     connector_type: str = 'litellm'
     gzctf_enabled: bool = False
     gzctf_username: str = ''
@@ -233,6 +235,7 @@ class ConfigUpdateRequest:
             emergency_compress_ratio=float(payload.get('emergency_compress_ratio', 0.95)),
             long_term_memory_enabled=_coerce_bool(payload.get('long_term_memory_enabled'), True),
             show_terminal_output=show_terminal_output,
+            agent_state_machine_enabled=_coerce_bool(payload.get('agent_state_machine_enabled'), True),
             connector_type=connector_type,
             gzctf_enabled=_coerce_bool(payload.get('gzctf_enabled'), False),
             gzctf_username=str(payload.get('gzctf_username', '')).strip(),
@@ -585,7 +588,7 @@ class CreateTaskRequest:
         workflow_kind: Normalized workflow kind.
         task_mode: Task interaction mode.
         execution_mode: Execution fan-out mode.
-        context_mode: Immutable context assembly mode.
+        context_mode: Optional context assembly mode.
         learning_mode: Knowledge learning mode.
         learning_search_rounds: Search round budget.
         learning_results_per_query: Search result budget per query.
@@ -780,6 +783,7 @@ class TaskUpdateRequest:
         workflow_kind: Optional workflow kind.
         task_mode: Optional task mode.
         execution_mode: Optional execution mode.
+        context_mode: Optional context mode.
         learning_mode: Optional learning mode.
         learning_limits: Optional normalized learning limits dictionary.
         learning_focus_keywords: Optional normalized focus keywords.
@@ -796,6 +800,7 @@ class TaskUpdateRequest:
     workflow_kind: Optional[str] = None
     task_mode: Optional[str] = None
     execution_mode: Optional[str] = None
+    context_mode: Optional[str] = None
     learning_mode: Optional[str] = None
     learning_limits: Optional[Dict[str, int]] = None
     learning_focus_keywords: Optional[List[str]] = None
@@ -817,6 +822,7 @@ class TaskUpdateRequest:
         workflow_kind = str(payload.get('workflowKind', payload.get('workflow_kind', ''))).strip() or None
         task_mode = str(payload.get('taskMode', '')).strip() or None
         execution_mode = str(payload.get('executionMode', '')).strip() or None
+        context_mode = str(payload.get('contextMode', payload.get('context_mode', ''))).strip() or None
         learning_mode = str(payload.get('learningMode', payload.get('learning_mode', ''))).strip() or None
 
         # Normalize optional keyword filters only when callers supplied them.
@@ -874,6 +880,7 @@ class TaskUpdateRequest:
             workflow_kind=workflow_kind,
             task_mode=task_mode,
             execution_mode=execution_mode,
+            context_mode=context_mode,
             learning_mode=learning_mode,
             learning_limits=learning_limits,
             learning_focus_keywords=learning_focus_keywords,

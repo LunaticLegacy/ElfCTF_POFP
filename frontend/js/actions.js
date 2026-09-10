@@ -120,6 +120,7 @@ async function onSaveConfigClick(triggerBtn) {
   const maxRounds = Number(getInputValue('maxRoundsInput', '50'));
   const maxContextChars = Number(getInputValue('maxContextCharsInput', '14000'));
   const showTerminalOutput = Boolean(document.getElementById('showTerminalOutputToggle')?.checked);
+  const agentStateMachineEnabled = Boolean(document.getElementById('agentStateMachineToggle')?.checked);
   const gzctfEnabled = Boolean(document.getElementById('gzctfEnabled')?.checked);
   const gzctfUsername = getInputValue('gzctfUsername').trim();
   const gzctfPassword = getInputValue('gzctfPassword');
@@ -161,6 +162,7 @@ async function onSaveConfigClick(triggerBtn) {
       max_rounds: maxRounds,
       max_context_chars: maxContextChars,
       show_terminal_output: showTerminalOutput,
+      agent_state_machine_enabled: agentStateMachineEnabled,
       gzctf_enabled: gzctfEnabled,
       ...(gzctfEnabled ? {
         gzctf_username: gzctfUsername,
@@ -176,6 +178,7 @@ async function onSaveConfigClick(triggerBtn) {
     localStorage.setItem(getUserStorageKey('ctf_api_base'), apiBase);
     localStorage.setItem(getUserStorageKey('ctf_connector_type'), connectorType);
     localStorage.setItem(getUserStorageKey('ctf_show_terminal_output'), String(showTerminalOutput));
+    localStorage.setItem(getUserStorageKey('ctf_agent_state_machine_enabled'), String(agentStateMachineEnabled));
     currentUserConfigState = {
       ...currentUserConfigState,
       has_server_fallback: Boolean(result.data?.has_server_fallback),
@@ -184,11 +187,13 @@ async function onSaveConfigClick(triggerBtn) {
       effective_api_base: result.data?.effective_api_base || apiBase || currentUserConfigState.effective_api_base,
       effective_connector_type: result.data?.connector_type || connectorType || 'litellm',
       gzctf_enabled: Boolean(result.data?.gzctf_enabled),
+      agent_state_machine_enabled: result.data?.agent_state_machine_enabled !== false,
       gzctf_status_message: result.data?.gzctf_status_message || '',
       gzctf_has_cookie: Boolean(result.data?.gzctf_has_cookie),
       gzctf_team: result.data?.gzctf_team || null,
     };
     setCheckboxValue('gzctfEnabled', Boolean(result.data?.gzctf_enabled));
+    setCheckboxValue('agentStateMachineToggle', result.data?.agent_state_machine_enabled !== false);
     toggleGzctfConfigInputs(Boolean(result.data?.gzctf_enabled));
     updateUserContextUi();
     updateGzctfStatusUi(result.data || {});
@@ -852,6 +857,7 @@ async function onEditTaskClick() {
   const systemPrompt = getInputValue('editTaskSystemPrompt').trim();
   const executionMode = getInputValue('editTaskExecutionMode', 'single');
   const taskMode = getInputValue('editTaskMode', 'classic');
+  const contextMode = getInputValue('editTaskContextMode', 'linear');
   const learningConfig = getLearningConfig('editTask');
   const swarmSubagentConfig = getSwarmSubagentConfig('editTask');
   const skills = getSelectedSkills('editTaskSkills');
@@ -880,6 +886,7 @@ async function onEditTaskClick() {
         workflowKind,
         taskMode,
         executionMode,
+        contextMode,
         learningMode: learningConfig.mode,
         learningSearchRounds: learningConfig.searchRounds,
         learningResultsPerQuery: learningConfig.resultsPerQuery,

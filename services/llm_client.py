@@ -87,7 +87,7 @@ class LLMClient:
             Candidate URLs for the provider's model-list endpoint.
         """
         # Preserve explicit paths from the caller, then try the provider-native and OpenAI-style routes.
-        base = (api_base or 'https://api.openai.com').rstrip('/')
+        base = api_base.rstrip('/')
         parsed = urlparse(base)
         host = parsed.netloc.lower()
         path = parsed.path.rstrip('/')

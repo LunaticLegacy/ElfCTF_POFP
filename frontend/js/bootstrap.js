@@ -18,6 +18,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       effective_api_base: '',
       effective_connector_type: 'litellm',
       gzctf_enabled: false,
+      agent_state_machine_enabled: true,
       gzctf_status_message: '',
       gzctf_has_cookie: false,
       gzctf_team: null,
@@ -29,6 +30,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     setInputValue('gzctfPassword', '');
     setInputValue('gzctfGameUrl', '');
     toggleGzctfConfigInputs(false);
+    setCheckboxValue('agentStateMachineToggle', true);
     const showTerminalToggle = document.getElementById('showTerminalOutputToggle');
     if (showTerminalToggle) {
       showTerminalToggle.checked = true;
@@ -53,6 +55,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
         effective_api_base: result.data.effective_api_base || '',
         effective_connector_type: result.data.connector_type || 'litellm',
         gzctf_enabled: Boolean(result.data.gzctf_enabled),
+        agent_state_machine_enabled: result.data.agent_state_machine_enabled !== false,
         gzctf_status_message: result.data.gzctf_status_message || '',
         gzctf_has_cookie: Boolean(result.data.gzctf_has_cookie),
         gzctf_team: result.data.gzctf_team || null,
@@ -64,6 +67,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       setInputValue('gzctfPassword', result.data.gzctf_password || '');
       setInputValue('gzctfGameUrl', result.data.gzctf_game_url || '');
       toggleGzctfConfigInputs(Boolean(result.data.gzctf_enabled));
+      setCheckboxValue('agentStateMachineToggle', result.data.agent_state_machine_enabled !== false);
       
       // 设置连接器类型
       const connectorType = result.data.connector_type || 'litellm';
@@ -110,6 +114,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
       effective_api_base: '',
       effective_connector_type: 'litellm',
       gzctf_enabled: false,
+      agent_state_machine_enabled: true,
       gzctf_status_message: '',
       gzctf_has_cookie: false,
       gzctf_team: null,
@@ -121,6 +126,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     const savedBase = localStorage.getItem(getUserStorageKey('ctf_api_base'));
     const savedConnector = localStorage.getItem(getUserStorageKey('ctf_connector_type'));
     const savedShowTerminalOutput = localStorage.getItem(getUserStorageKey('ctf_show_terminal_output'));
+    const savedAgentStateMachine = localStorage.getItem(getUserStorageKey('ctf_agent_state_machine_enabled'));
     setInputValue('apiKey', savedKey || '');
     setInputValue('apiBase', savedBase || '');
     setCheckboxValue('gzctfEnabled', false);
@@ -128,6 +134,7 @@ async function loadCurrentUserState({ forceRefreshTasks = false } = {}) {
     setInputValue('gzctfPassword', '');
     setInputValue('gzctfGameUrl', '');
     toggleGzctfConfigInputs(false);
+    setCheckboxValue('agentStateMachineToggle', savedAgentStateMachine !== 'false');
     if (savedConnector) {
       const connectorSelect = document.getElementById('connectorType');
       if (connectorSelect) {

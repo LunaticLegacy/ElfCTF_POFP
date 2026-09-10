@@ -315,6 +315,7 @@ class TaskManager:
             'workflow_kind': 'workflow_kind',
             'task_mode': 'task_mode',
             'execution_mode': 'execution_mode',
+            'context_mode': 'context_mode',
             'learning_mode': 'learning_mode',
             'learning_search_rounds': 'learning_search_rounds',
             'learning_results_per_query': 'learning_results_per_query',
@@ -329,6 +330,8 @@ class TaskManager:
             if value is not None:
                 if attr == 'external_tool_names':
                     setattr(task.config, attr, normalize_tool_names(value))
+                elif attr == 'context_mode':
+                    setattr(task.config, attr, normalize_context_mode(value))
                 else:
                     setattr(task.config, attr, value)
         task.add_log('任务配置已更新')
